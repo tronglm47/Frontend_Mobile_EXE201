@@ -8,6 +8,7 @@ export default function Index() {
   const [ready, setReady] = React.useState(false);
   const [hasSeen, setHasSeen] = React.useState<boolean | null>(null);
   const [hasToken, setHasToken] = React.useState<boolean | null>(null);
+    const [hasSeenPlans, setHasSeenPlans] = React.useState<boolean | null>(null);
 
   const MIN_LOADING_MS = 800;
 
@@ -32,13 +33,15 @@ export default function Index() {
     (async () => {
       const start = Date.now();
       try {
-        const [seenFlag, token] = await Promise.all([
+          const [seenFlag, token, plansFlag] = await Promise.all([
           AsyncStorage.getItem('hasSeenOnboarding'),
           AsyncStorage.getItem('authToken'),
+            AsyncStorage.getItem('hasSeenPlans'),
           preloadAssets(),
         ]);
         setHasSeen(seenFlag === 'true');
         setHasToken(Boolean(token));
+          setHasSeenPlans(plansFlag === 'true');
       } finally {
         const elapsed = Date.now() - start;
         const wait = Math.max(0, MIN_LOADING_MS - elapsed);
@@ -53,14 +56,14 @@ export default function Index() {
     };
   }, [preloadAssets]);
 
-  if (!ready || hasSeen === null || hasToken === null) return <LoadingScreen />;
+    if (!ready || hasSeen === null || hasToken === null || hasSeenPlans === null) return <LoadingScreen />;
 
   // Routing:
   // - If logged in: go home tabs
   // - Else if already saw onboarding: go to login
   // - Else: show onboarding
   const target = hasToken
-    ? '/(tabs)'
+      ? (hasSeenPlans ? '/(tabs)' : '/choose-plan')
     : hasSeen
     ? '/onboarding'
     : '/login';

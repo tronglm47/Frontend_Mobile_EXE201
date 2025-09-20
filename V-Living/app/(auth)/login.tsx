@@ -67,7 +67,8 @@ export default function LoginScreen() {
           style={styles.primaryBtn}
           onPress={async () => {
             await AsyncStorage.setItem('authToken', 'dummy');
-            router.replace('/(tabs)');
+            const seenPlans = await AsyncStorage.getItem('hasSeenPlans');
+            router.replace((seenPlans === 'true' ? '/(tabs)' : '/choose-plan') as any);
           }}
         >
           <Text style={styles.primaryText}>Đăng nhập</Text>
