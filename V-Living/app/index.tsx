@@ -6,7 +6,8 @@ import { LoadingScreen } from '@/components/loading-screen';
 
 export default function Index() {
   const [ready, setReady] = React.useState(false);
-  const [seen, setSeen] = React.useState<boolean | null>(null);
+  const [hasSeen, setHasSeen] = React.useState<boolean | null>(null);
+  const [hasToken, setHasToken] = React.useState<boolean | null>(null);
 
   const MIN_LOADING_MS = 800;
 
@@ -26,16 +27,18 @@ export default function Index() {
   }, []);
 
   React.useEffect(() => {
-    let t: ReturnType<typeof setTimeout> | undefined;
+  let t: ReturnType<typeof setTimeout> | number | undefined;
 
     (async () => {
       const start = Date.now();
       try {
-        const [flag] = await Promise.all([
+        const [seenFlag, token] = await Promise.all([
           AsyncStorage.getItem('hasSeenOnboarding'),
+          AsyncStorage.getItem('authToken'),
           preloadAssets(),
         ]);
-        setSeen(flag === 'true');
+        setHasSeen(seenFlag === 'true');
+        setHasToken(Boolean(token));
       } finally {
         const elapsed = Date.now() - start;
         const wait = Math.max(0, MIN_LOADING_MS - elapsed);
@@ -43,10 +46,24 @@ export default function Index() {
       }
     })();
 
-    return () => t && clearTimeout(t);
+    return () => {
+      if (t !== undefined && t !== null) {
+        clearTimeout(t as any);
+      }
+    };
   }, [preloadAssets]);
 
-  if (!ready || seen === null) return <LoadingScreen />;
+  if (!ready || hasSeen === null || hasToken === null) return <LoadingScreen />;
 
-  return <Redirect href={seen ? '/onboarding' : '/(tabs)'} />;
+  // Routing:
+  // - If logged in: go home tabs
+  // - Else if already saw onboarding: go to login
+  // - Else: show onboarding
+  const target = hasToken
+    ? '/(tabs)'
+    : hasSeen
+    ? '/onboarding'
+    : '/login';
+
+  return <Redirect href={target as any} />;
 }
