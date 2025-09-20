@@ -58,7 +58,7 @@ export default function OnboardingScreen() {
     try {
       await AsyncStorage.setItem('hasSeenOnboarding', 'true');
     } catch {}
-    router.replace('/(tabs)');
+    router.replace('/login' as any);
   }, [router]);
 
   const goNext = useCallback(() => {
