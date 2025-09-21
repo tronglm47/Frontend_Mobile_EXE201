@@ -58,7 +58,7 @@ export default function LoginScreen() {
             </View>
             <Text style={styles.checkboxLabel}>Ghi nhớ tài khoản</Text>
           </TouchableOpacity>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/forgot-password' as any)}>
             <Text style={styles.linkText}>Quên mật khẩu ?</Text>
           </TouchableOpacity>
         </View>

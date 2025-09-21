@@ -22,6 +22,10 @@ export default function RootLayout() {
   <Stack.Screen name="(auth)" options={{ headerShown: false }} />
   <Stack.Screen name="choose-plan" options={{ headerShown: false }} />
   <Stack.Screen name="detail" options={{ headerShown: false }} />
+  <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+  <Stack.Screen name="verify-email" options={{ headerShown: false }} />
+  <Stack.Screen name="create-new-password" options={{ headerShown: false }} />
+  <Stack.Screen name="password-changed-success" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />
