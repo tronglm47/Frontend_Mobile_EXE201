@@ -4,7 +4,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Animated,
   Dimensions,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
@@ -12,6 +11,7 @@ import {
   View,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
