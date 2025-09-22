@@ -1,11 +1,10 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Alert,
   Animated,
   FlatList,
   Image,
   Linking,
-  SafeAreaView,
   ScrollView,
   Share,
   StatusBar,
@@ -16,6 +15,7 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
