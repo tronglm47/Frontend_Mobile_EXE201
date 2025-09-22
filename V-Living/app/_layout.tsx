@@ -14,22 +14,25 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          {/* hide header for the root index (loading/redirect) */}
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          <Stack.Screen name="choose-plan" options={{ headerShown: false }} />
-          <Stack.Screen name="detail" options={{ headerShown: false }} />
-          <Stack.Screen name="booking" options={{ headerShown: false }} />
-          {/* Do not declare a `messages` screen here; its children (messages/index, messages/[id]) are routed directly */}
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
-    </GestureHandlerRootView>
+
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <Stack>
+        {/* hide header for the root index (loading/redirect) */}
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="choose-plan" options={{ headerShown: false }} />
+        <Stack.Screen name="detail" options={{ headerShown: false }} />
+        <Stack.Screen name="booking" options={{ headerShown: false }} />
+        {/* Do not declare a `messages` screen here; its children (messages/index, messages/[id]) are routed directly */}
+        <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+        <Stack.Screen name="verify-email" options={{ headerShown: false }} />
+        <Stack.Screen name="create-new-password" options={{ headerShown: false }} />
+        <Stack.Screen name="password-changed-success" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+      </Stack>
+      <StatusBar style="auto" />
+    </ThemeProvider>
   );
 }
