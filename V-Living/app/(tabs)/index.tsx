@@ -1,17 +1,9 @@
-import { router } from 'expo-router';
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Colors, Fonts } from '@/constants/theme';
-import ReactNative, { Alert } from 'react-native';
+// Alert imported above
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useFavorites } from '../favorites-context';
@@ -19,7 +11,6 @@ import { LISTINGS } from '../listings';
 
 const IMG = (seed: string, w = 600, h = 400) =>
   `https://picsum.photos/seed/${seed}/${w}/${h}`;
-import { StyleSheet, View, Text, Button } from 'react-native';
 
 export default function HomeTab() {
   const { isFav, toggle } = useFavorites();
@@ -64,7 +55,7 @@ export default function HomeTab() {
         </ScrollView>
       </Section>
 
-      <Section title="Phổ Biến Dành Cho Bạn" onViewAll={() => router.push('/popular')}>
+      <Section title="Phổ Biến Dành Cho Bạn" onViewAll={() => router.push({ pathname: '/popular' } as any)}>
         <View style={{ gap: 12 }}>
           {LISTINGS.map((l) => (
             <ListItem
@@ -222,17 +213,8 @@ function Chip({ label, colorIndex }: { label: string; colorIndex: number }) {
   const colors = ['#C5E0FF', '#FFE7B0', '#E7E1FF', '#C7F5D9', '#FFD9E2'];
   const textColors = ['#1A68D9', '#9A6A00', '#5A45C6', '#1E7A4B', '#B22A4E'];
   return (
-    <View style={[styles.chip, { backgroundColor: colors[colorIndex % colors.length] }] }>
+    <View style={[styles.chip, { backgroundColor: colors[colorIndex % colors.length] }]}>
       <Text style={[styles.chipText, { color: textColors[colorIndex % textColors.length] }]}>{label}</Text>
-    <View style={styles.container}>
-      <Text style={styles.title}>Trang chủ</Text>
-      <Text>Welcome to V‑Living</Text>
-    {/* add booking button and route  */}
-    <Button title="Book Now" onPress={() => router.push('./booking')} />
-<Button title="messages" onPress={() => router.push('./messages')} />
-  
-    <Button title="notifications" onPress={() => router.push('./notifications')} />
-
     </View>
   );
 }
@@ -321,4 +303,4 @@ const styles = StyleSheet.create({
   listSub: { color: '#9BA1A6', fontSize: 12 },
   listPrice: { fontSize: 12, fontWeight: '700' as const },
   heartBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F2F3F5', alignItems: 'center', justifyContent: 'center' },
-});
+})
