@@ -6,7 +6,7 @@ const GOLD = '#E0B100';
 const TEXT = '#111827';
 
 type BotMsg = { id: string; fromBot?: boolean; text: string; time?: string };
-const BOT_ICON = require('../../assets/images/chatboticon/bot.png');
+const BOT_ICON = require('../../assets/images/chatboticon/bott.svg');
 
 export function ChatbotSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const [messages, setMessages] = useState<BotMsg[]>([

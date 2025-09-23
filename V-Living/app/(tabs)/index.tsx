@@ -10,7 +10,9 @@ export default function HomeTab() {
     {/* add booking button and route  */}
     <Button title="Book Now" onPress={() => router.push('./booking')} />
 <Button title="messages" onPress={() => router.push('./messages')} />
-  <Button title="details" onPress={() => router.push('./detail')} />
+  
+    <Button title="notifications" onPress={() => router.push('./notifications')} />
+
     </View>
   );
 }
