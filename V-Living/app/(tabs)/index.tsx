@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import React from 'react';
 import {
   View,
@@ -18,6 +19,7 @@ import { LISTINGS } from '../listings';
 
 const IMG = (seed: string, w = 600, h = 400) =>
   `https://picsum.photos/seed/${seed}/${w}/${h}`;
+import { StyleSheet, View, Text, Button } from 'react-native';
 
 export default function HomeTab() {
   const { isFav, toggle } = useFavorites();
@@ -222,6 +224,13 @@ function Chip({ label, colorIndex }: { label: string; colorIndex: number }) {
   return (
     <View style={[styles.chip, { backgroundColor: colors[colorIndex % colors.length] }] }>
       <Text style={[styles.chipText, { color: textColors[colorIndex % textColors.length] }]}>{label}</Text>
+    <View style={styles.container}>
+      <Text style={styles.title}>Trang chủ</Text>
+      <Text>Welcome to V‑Living</Text>
+    {/* add booking button and route  */}
+    <Button title="Book Now" onPress={() => router.push('./booking')} />
+<Button title="messages" onPress={() => router.push('./messages')} />
+  <Button title="details" onPress={() => router.push('./detail')} />
     </View>
   );
 }
