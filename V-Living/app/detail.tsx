@@ -5,7 +5,6 @@ import {
   FlatList,
   Image,
   Linking,
-  SafeAreaView,
   ScrollView,
   Share,
   StatusBar,
@@ -16,7 +15,8 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 const GOLD = '#E0B100';
@@ -24,17 +24,16 @@ const GRAY = '#6B7280';
 const BG = '#F7F7F8';
 const { width } = Dimensions.get('window');
 
-const IMAGES = [
-  require('../assets/images/screenKhoa/detail.png'),
-  require('../assets/images/screenKhoa/detail.png'),
-  require('../assets/images/screenKhoa/detail.png'),
-  require('../assets/images/screenKhoa/detail.png'),
-  require('../assets/images/screenKhoa/detail.png'),
-  require('../assets/images/screenKhoa/detail.png'),
-];
+const IMG = (seed: string, w = 800, h = 600) => ({ uri: `https://picsum.photos/seed/${seed}/${w}/${h}` });
+
+import { getListingById } from './listings';
+import { useFavorites } from './favorites-context';
 
 export default function DetailScreen() {
-  const [fav, setFav] = useState(false);
+  const params = useLocalSearchParams<{ id?: string }>();
+  const listing = useMemo(() => getListingById(String(params.id || 'l1')), [params.id]);
+  const { isFav, toggle } = useFavorites();
+  const fav = isFav(listing?.id || '');
   const [expanded, setExpanded] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -54,7 +53,7 @@ export default function DetailScreen() {
   };
 
   const renderImage = ({ item }: { item: any }) => (
-    <Image source={item} style={styles.mainImage} />
+    <Image source={IMG(listing?.seed + '-' + item, 800, 600)} style={styles.mainImage} />
   );
 
   return (
@@ -70,11 +69,11 @@ export default function DetailScreen() {
           </TouchableOpacity>
           <Text style={styles.topTitle}>Thông tin</Text>
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <TouchableOpacity onPress={onShare} style={styles.roundBtn}>
+          <TouchableOpacity onPress={onShare} style={styles.roundBtn}>
               <Ionicons name="share-social-outline" size={27} color="#111827" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setFav(v => !v)} style={styles.roundBtn}>
-              <Ionicons name={fav ? 'heart' : 'heart-outline'} size={27} color={fav ? GOLD : '#111827'} />
+          <TouchableOpacity onPress={() => listing?.id && toggle(listing.id)} style={styles.roundBtn}>
+            <Ionicons name={fav ? 'heart' : 'heart-outline'} size={27} color={fav ? GOLD : '#111827'} />
             </TouchableOpacity>
           </View>
         </View>
@@ -82,7 +81,7 @@ export default function DetailScreen() {
         {/* Image carousel */}
         <Animated.FlatList
           ref={sliderRef}
-          data={IMAGES}
+          data={[0,1,2,3,4,5]}
           keyExtractor={(_, i) => String(i)}
           renderItem={renderImage}
           horizontal
