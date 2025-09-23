@@ -5,7 +5,9 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
+// Unified accent color (gold) - matching login button
+export const GOLD = '#E0B100';
+const tintColorLight = GOLD;
 const tintColorDark = '#fff';
 
 export const Colors = {
