@@ -5,12 +5,15 @@ import { Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, Touchable
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { login as apiLogin } from '@/lib/auth';
 
 export default function LoginScreen() {
-  const [email, setEmail] = React.useState('leminhtrong@gmail.com');
+  const [email, setEmail] = React.useState('admin');
   const [password, setPassword] = React.useState('');
   const [remember, setRemember] = React.useState(true);
   const [secure, setSecure] = React.useState(true);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -64,15 +67,27 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
+        {error ? <Text style={{ color: '#B00020', marginTop: 8 }}>{error}</Text> : null}
+
         <TouchableOpacity
-          style={styles.primaryBtn}
+          style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
+          disabled={loading}
           onPress={async () => {
-            await AsyncStorage.setItem('authToken', 'dummy');
-            const seenPlans = await AsyncStorage.getItem('hasSeenPlans');
-            router.replace((seenPlans === 'true' ? '/(tabs)' : '/choose-plan') as any);
+            setError(null);
+            setLoading(true);
+            try {
+              // API expects username + password
+              await apiLogin({ username: email, password });
+              const seenPlans = await AsyncStorage.getItem('hasSeenPlans');
+              router.replace((seenPlans === 'true' ? '/(tabs)' : '/choose-plan') as any);
+            } catch (e: any) {
+              setError(e?.message || 'Đăng nhập thất bại');
+            } finally {
+              setLoading(false);
+            }
           }}
         >
-          <Text style={styles.primaryText}>Đăng nhập</Text>
+          <Text style={styles.primaryText}>{loading ? 'Đang xử lý…' : 'Đăng nhập'}</Text>
         </TouchableOpacity>
 
         <View style={styles.orWrap}>
