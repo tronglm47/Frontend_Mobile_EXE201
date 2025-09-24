@@ -1,17 +1,25 @@
 import React from 'react';
 import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { register as apiRegister } from '@/lib/auth';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function RegisterScreen() {
   const [email, setEmail] = React.useState('leminhtrong@gmail.com');
   const [username, setUsername] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
+  const [fullName, setFullName] = React.useState('');
+  const [phoneNumber, setPhoneNumber] = React.useState('');
+  const [profilePictureUrl, setProfilePictureUrl] = React.useState('');
   const [secure, setSecure] = React.useState(true);
+  const [secureConfirm, setSecureConfirm] = React.useState(true);
   const [agree, setAgree] = React.useState(true);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -23,7 +31,7 @@ export default function RegisterScreen() {
         </View>
 
         <Text style={styles.heading}>Đăng Ký Tài Khoản</Text>
-        <Text style={styles.sub}>Vui lòng nhập email, username và mật khẩu để tiếp tục</Text>
+  <Text style={styles.sub}>Vui lòng nhập thông tin cá nhân của bạn</Text>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Email</Text>
@@ -71,22 +79,135 @@ export default function RegisterScreen() {
           </View>
         </View>
 
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Xác nhận mật khẩu</Text>
+          <View style={styles.inputWrap}>
+            <TextInput
+              placeholder="Confirm Password"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry={secureConfirm}
+              style={[styles.input, { flex: 1 }]}
+              placeholderTextColor="#9BA1A6"
+            />
+            <TouchableOpacity onPress={() => setSecureConfirm(s => !s)} style={styles.eyeBtn}>
+              <Ionicons name={secureConfirm ? 'eye-off-outline' : 'eye-outline'} size={20} color="#9BA1A6" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Họ và tên</Text>
+          <View style={styles.inputWrap}>
+            <TextInput
+              placeholder="Họ và tên"
+              value={fullName}
+              onChangeText={setFullName}
+              autoCapitalize="words"
+              style={styles.input}
+              placeholderTextColor="#9BA1A6"
+            />
+          </View>
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Số điện thoại</Text>
+          <View style={styles.inputWrap}>
+            <TextInput
+              placeholder="Số điện thoại"
+              value={phoneNumber}
+              onChangeText={setPhoneNumber}
+              keyboardType="phone-pad"
+              style={styles.input}
+              placeholderTextColor="#9BA1A6"
+            />
+          </View>
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Ảnh đại diện</Text>
+          {profilePictureUrl ? (
+            <View style={styles.avatarRow}>
+              <Image source={{ uri: profilePictureUrl }} style={styles.avatar} />
+              <TouchableOpacity onPress={() => setProfilePictureUrl('')} style={styles.clearBtn}>
+                <Text style={styles.clearText}>Xóa</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              style={[styles.secondaryBtn]}
+              onPress={async () => {
+                const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (perm.status !== 'granted') {
+                  setError('Cần quyền truy cập thư viện để chọn ảnh');
+                  return;
+                }
+                const res = await ImagePicker.launchImageLibraryAsync({
+                  mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                  allowsEditing: true,
+                  aspect: [1, 1],
+                  quality: 0.7,
+                  base64: true,
+                });
+                if (!res.canceled && res.assets && res.assets[0]) {
+                  const asset = res.assets[0];
+                  const base64 = asset.base64;
+                  const mime = asset.type === 'video' ? 'image/jpeg' : (asset.mimeType || 'image/jpeg');
+                  if (base64) {
+                    const dataUri = `data:${mime};base64,${base64}`;
+                    setProfilePictureUrl(dataUri);
+                  } else if (asset.uri) {
+                    // Fallback to file URI if base64 missing
+                    setProfilePictureUrl(asset.uri);
+                  }
+                }
+              }}
+            >
+              <Text style={styles.secondaryText}>Choose from library</Text>
+            </TouchableOpacity>
+            {/* <View style={[styles.inputWrap, { flex: 1 }]}> 
+              <TextInput
+                placeholder="Hoặc dán URL: https://..."
+                value={profilePictureUrl}
+                onChangeText={setProfilePictureUrl}
+                autoCapitalize="none"
+                keyboardType="url"
+                style={[styles.input, { flex: 1 }]}
+                placeholderTextColor="#9BA1A6"
+              />
+            </View> */}
+          </View>
+        </View>
+
         <TouchableOpacity style={styles.checkboxRow} onPress={() => setAgree(a => !a)}>
           <View style={[styles.checkbox, agree && styles.checkboxChecked]}>
             {agree && <Ionicons name="checkmark" size={14} color="#fff" />}
           </View>
-          <Text style={styles.checkboxLabel}>Đồng ý với điều khoản và chính sách quyền riêng tư</Text>
+          <Text style={styles.checkboxLabel}>Đồng ý với điều khoản và chính sách bảo mật</Text>
         </TouchableOpacity>
 
+        {error ? <Text style={{ color: '#B00020', marginTop: 8 }}>{error}</Text> : null}
         <TouchableOpacity
-          style={styles.primaryBtn}
+          style={[styles.primaryBtn, (!agree || loading) && { opacity: 0.7 }]}
+          disabled={!agree || loading}
           onPress={async () => {
-            await AsyncStorage.setItem('authToken', 'dummy');
-            const seenPlans = await AsyncStorage.getItem('hasSeenPlans');
-            router.replace((seenPlans === 'true' ? '/(tabs)' : '/choose-plan') as any);
+            setError(null);
+            setLoading(true);
+            try {
+              if (!email || !username || !password) throw new Error('Vui lòng nhập đầy đủ Email, Username, Mật khẩu');
+              if (password !== confirmPassword) throw new Error('Mật khẩu xác nhận không khớp');
+              await apiRegister({ username, email, password, fullName, phoneNumber, profilePictureUrl });
+              // After register, redirect to login for now
+              router.replace('/login' as any);
+            } catch (e: any) {
+              setError(e?.message || 'Đăng ký thất bại');
+            } finally {
+              setLoading(false);
+            }
           }}
         >
-          <Text style={styles.primaryText}>Đăng ký</Text>
+          <Text style={styles.primaryText}>{loading ? 'Đang xử lý…' : 'Đăng ký'}</Text>
         </TouchableOpacity>
 
         <View style={styles.orWrap}>
@@ -216,6 +337,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 16,
   },
+  secondaryBtn: {
+    height: 48,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    backgroundColor: '#F2F3F5',
+  },
+  secondaryText: { color: Colors.light.text, fontWeight: '600' },
   orWrap: {
     marginTop: 18,
     flexDirection: 'row',
@@ -248,4 +378,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#fff',
   },
+  avatarRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
+  avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#F2F3F5' },
+  clearBtn: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#FEE2E2', borderRadius: 8 },
+  clearText: { color: '#B91C1C', fontWeight: '600' },
 });
