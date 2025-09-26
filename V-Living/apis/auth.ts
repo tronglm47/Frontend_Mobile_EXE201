@@ -1,0 +1,44 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../utils/api';
+
+export type LoginBody = { username: string; password: string };
+export type LoginResponse = { token: string };
+
+export type RegisterBody = {
+  username: string;
+  email: string;
+  password: string;
+  fullName?: string;
+  phoneNumber?: string;
+  profilePictureUrl?: string;
+  bio?: string;
+  role?: string;
+};
+
+export async function login(body: LoginBody): Promise<string> {
+  const res = await api.post<LoginResponse>('Auth/login', body);
+  const token = res?.token;
+  if (!token) throw new Error('Token missing in response');
+  await AsyncStorage.setItem('authToken', token);
+  return token;
+}
+
+export async function register(body: RegisterBody): Promise<void> {
+  await api.post('Auth/register', body);
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await api.post('Auth/logout', undefined, true);
+  } finally {
+    await AsyncStorage.removeItem('authToken');
+  }
+}
+
+export async function refreshToken(token: string): Promise<string> {
+  const res = await api.post<LoginResponse>('Auth/refresh', { token });
+  const newToken = res?.token;
+  if (!newToken) throw new Error('Refresh failed');
+  await AsyncStorage.setItem('authToken', newToken);
+  return newToken;
+}
