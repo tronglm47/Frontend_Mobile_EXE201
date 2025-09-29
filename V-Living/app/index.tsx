@@ -1,8 +1,8 @@
-import React from 'react';
-import { Redirect } from 'expo-router';
+import { LoadingScreen } from '@/components/loading-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Asset } from 'expo-asset';
-import { LoadingScreen } from '@/components/loading-screen';
+import { Redirect } from 'expo-router';
+import React from 'react';
 
 export default function Index() {
   const [ready, setReady] = React.useState(false);
@@ -10,7 +10,7 @@ export default function Index() {
   const [hasToken, setHasToken] = React.useState<boolean | null>(null);
     const [hasSeenPlans, setHasSeenPlans] = React.useState<boolean | null>(null);
 
-  const MIN_LOADING_MS = 800;
+  const MIN_LOADING_MS = 5000;
 
   const preloadAssets = React.useCallback(async () => {
     try {

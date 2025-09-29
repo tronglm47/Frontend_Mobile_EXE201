@@ -1,10 +1,14 @@
-import React, { useRef, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  Dimensions,
   FlatList,
   Image,
   Linking,
+  Platform,
   ScrollView,
   Share,
   StatusBar,
@@ -12,12 +16,10 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Dimensions,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { useFavorites } from './favorites-context';
+import { getListingById } from './listings';
 
 const GOLD = '#E0B100';
 const GRAY = '#6B7280';
@@ -26,8 +28,7 @@ const { width } = Dimensions.get('window');
 
 const IMG = (seed: string, w = 800, h = 600) => ({ uri: `https://picsum.photos/seed/${seed}/${w}/${h}` });
 
-import { getListingById } from './listings';
-import { useFavorites } from './favorites-context';
+
 
 export default function DetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
@@ -100,7 +101,7 @@ export default function DetailScreen() {
         {/* Thumbnails */}
         <FlatList
           horizontal
-          data={IMAGES}
+          data={IMG(listing?.seed || 'x', 100, 100) ? [0,1,2,3,4,5] : []}
           keyExtractor={(_, i) => 'thumb-' + i}
           contentContainerStyle={{  paddingTop: 10, height: 102 }}
           showsHorizontalScrollIndicator={false}
