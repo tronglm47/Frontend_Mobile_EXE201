@@ -1,11 +1,11 @@
-import React from 'react';
-import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/theme';
-import { Ionicons } from '@expo/vector-icons';
 import { login as apiLogin } from '@/lib/auth';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
+import React from 'react';
+import { Animated, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LoginScreen() {
   const [email, setEmail] = React.useState('admin');
@@ -14,6 +14,19 @@ export default function LoginScreen() {
   const [secure, setSecure] = React.useState(true);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // Smooth error banner fade and prevent layout jump
+  const errorOpacity = React.useRef(new Animated.Value(0)).current;
+  const lastErrorRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (error) lastErrorRef.current = error;
+    Animated.timing(errorOpacity, {
+      toValue: error ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [error, errorOpacity]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -29,7 +42,10 @@ export default function LoginScreen() {
             <TextInput
               placeholder="Email"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(v) => {
+                setEmail(v);
+                if (error) setError(null);
+              }}
               keyboardType="email-address"
               autoCapitalize="none"
               style={styles.input}
@@ -44,7 +60,10 @@ export default function LoginScreen() {
             <TextInput
               placeholder="Password"
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(v) => {
+                setPassword(v);
+                if (error) setError(null);
+              }}
               secureTextEntry={secure}
               style={[styles.input, { flex: 1 }]}
               placeholderTextColor="#9BA1A6"
@@ -67,13 +86,20 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        {error ? <Text style={{ color: '#B00020', marginTop: 8 }}>{error}</Text> : null}
+        {/* Error area reserves space to avoid layout shift */}
+        <View style={styles.errorArea}>
+          <Animated.View style={[styles.errorBanner, { opacity: errorOpacity }]}> 
+            <Ionicons name="alert-circle" size={18} color="#DC2626" style={{ marginRight: 8 }} />
+            <Text style={styles.errorText} numberOfLines={2}>
+              {lastErrorRef.current || ''}
+            </Text>
+          </Animated.View>
+        </View>
 
         <TouchableOpacity
           style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
           disabled={loading}
           onPress={async () => {
-            setError(null);
             setLoading(true);
             try {
               // API expects username + password
@@ -266,5 +292,25 @@ const styles = StyleSheet.create({
   footerLink: {
     color: GOLD,
     fontWeight: '600',
+  },
+  // Error display styles
+  errorArea: {
+    marginTop: 8,
+    minHeight: 40, // reserve space to prevent layout shift
+    justifyContent: 'center',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2', // red-100
+    borderWidth: 1,
+    borderColor: '#FCA5A5', // red-300
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  errorText: {
+    color: '#B91C1C', // red-700
+    flex: 1,
   },
 });
