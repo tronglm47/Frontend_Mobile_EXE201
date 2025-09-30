@@ -1,5 +1,5 @@
 import { Colors } from '@/constants/theme';
-import { register as apiRegister } from '@/lib/auth';
+import { register as apiRegister } from '@/apis/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React from 'react';
@@ -261,7 +261,8 @@ export default function RegisterScreen() {
               await apiRegister({ username, email, password, fullName, phoneNumber, role: 'user' });
             
 
-              router.replace('/login' as any);
+               // After register, go to verify email screen, pass password for later prefill
+               router.replace({ pathname: '/verify-email', params: { email, username, password } } as any);
             } catch (e: any) {
               const apiErrors = e?.errors || e?.data?.errors;
               if (apiErrors && typeof apiErrors === 'object') {

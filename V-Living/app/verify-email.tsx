@@ -4,16 +4,19 @@ import {
   View,
   Text,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   TextInput,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { resendVerification, verifyEmail } from '@/apis/auth';
 
 export default function VerifyEmailScreen() {
-  const [code, setCode] = useState(['', '', '', '']);
+  const params = useLocalSearchParams<{ email?: string; username?: string; password?: string }>();
+  const [code, setCode] = useState(['', '', '', '', '', '']);
+  const [submitting, setSubmitting] = useState(false);
   const inputRefs = useRef<TextInput[]>([]);
 
   const handleCodeChange = (value: string, index: number) => {
@@ -22,7 +25,7 @@ export default function VerifyEmailScreen() {
     setCode(newCode);
 
     // Auto focus next input
-    if (value && index < 3) {
+    if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
   };
@@ -33,17 +36,30 @@ export default function VerifyEmailScreen() {
     }
   };
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     const fullCode = code.join('');
-    if (fullCode.length === 4) {
-      // Navigate to create new password screen
-      router.push('/create-new-password' as any);
+    if (fullCode.length !== 6 || !params?.email) return;
+    try {
+      setSubmitting(true);
+      await verifyEmail({ token: fullCode });
+      // Success toast and redirect to login, prefill username/email
+      alert('Xác minh email thành công!');
+      router.replace({ pathname: '/login', params: { prefill: params.username || params.email, pwd: params.password || '' } } as any);
+    } catch (e: any) {
+      alert(e?.message || 'Mã xác minh không đúng. Vui lòng thử lại.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleResend = () => {
-    // TODO: Implement resend code logic
-    alert('Mã xác minh đã được gửi lại');
+  const handleResend = async () => {
+    if (!params?.email) return;
+    try {
+      await resendVerification(String(params.email));
+      alert('Mã xác minh đã được gửi lại');
+    } catch (e: any) {
+      alert(e?.message || 'Không thể gửi lại mã. Vui lòng thử lại.');
+    }
   };
 
   return (
@@ -61,7 +77,7 @@ export default function VerifyEmailScreen() {
         </TouchableOpacity>
         <Text style={styles.title}>Xác Minh Email Của Bạn</Text>
         <Text style={styles.subtitle}>
-          Vui lòng nhập mã xác minh gồm 4 chữ số đã được gửi đến địa chỉ email của bạn.
+          Vui lòng nhập mã xác minh gồm 6 chữ số đã được gửi đến địa chỉ email của bạn.
         </Text>
       </View>
 
@@ -98,12 +114,12 @@ export default function VerifyEmailScreen() {
         <TouchableOpacity 
           style={[
             styles.verifyButton,
-            code.join('').length === 4 ? styles.verifyButtonActive : styles.verifyButtonInactive
+            code.join('').length === 6 ? styles.verifyButtonActive : styles.verifyButtonInactive
           ]} 
           onPress={handleVerify}
-          disabled={code.join('').length !== 4}
+          disabled={code.join('').length !== 6}
         >
-          <Text style={styles.verifyButtonText}>Xác minh</Text>
+          <Text style={styles.verifyButtonText}>{submitting ? 'Đang xác minh...' : 'Xác minh'}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -114,10 +130,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
+    paddingTop: Platform.OS === 'android' ? 0 : 0,
   },
   header: {
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 10 : 0,
+    paddingTop: 12,
     paddingBottom: 30,
   },
   backButton: {
@@ -136,13 +153,13 @@ const styles = StyleSheet.create({
   },
   otpContainer: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     marginBottom: 30,
-    gap: 12,
   },
   otpInput: {
-    width: 60,
+    flex: 1,
+    maxWidth: 56,
     height: 60,
     borderWidth: 1,
     borderColor: '#E0E0E0',
