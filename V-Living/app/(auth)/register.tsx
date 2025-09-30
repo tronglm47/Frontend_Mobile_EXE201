@@ -1,5 +1,5 @@
 import { Colors } from '@/constants/theme';
-import { register as apiRegister } from '@/lib/auth';
+import { register as apiRegister } from '@/apis/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React from 'react';
