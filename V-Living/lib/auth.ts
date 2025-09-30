@@ -31,7 +31,11 @@ export async function login(body: LoginBody): Promise<string> {
 }
 
 export async function register(body: RegisterBody): Promise<void> {
-  await api.post('Auth/register', body);
+  const payload: RegisterBody = {
+    ...body,
+    role: body.role ?? 'user',
+  };
+  await api.post('Auth/register', payload);
 }
 
 export async function logout(): Promise<void> {
