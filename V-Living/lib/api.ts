@@ -1,5 +1,5 @@
-import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 
 function resolveBaseUrl(): string | undefined {
   // Prefer EXPO_PUBLIC_* at runtime (works in all builds)
@@ -19,7 +19,7 @@ function resolveBaseUrl(): string | undefined {
 const baseUrl = resolveBaseUrl();
 
 if (!baseUrl) {
-  // eslint-disable-next-line no-console
+   
   console.warn('[API] Missing API_BASE_URL. Set EXPO_PUBLIC_API_BASE_URL in .env or extra.API_BASE_URL in app.json');
 }
 
@@ -65,7 +65,11 @@ export async function request<T>(
 
   if (!res.ok) {
     const msg = (data && (data.message || data.error || data.title)) || `HTTP ${res.status}`;
-    throw new Error(msg);
+    const err: any = new Error(msg);
+    err.status = res.status;
+    err.data = data;
+    err.errors = (data && (data.errors || data.modelState)) || undefined;
+    throw err;
   }
 
   return data as T;

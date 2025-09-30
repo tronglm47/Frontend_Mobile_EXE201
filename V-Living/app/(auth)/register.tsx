@@ -1,14 +1,13 @@
-import React from 'react';
-import { router } from 'expo-router';
-import { Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/theme';
-import { Ionicons } from '@expo/vector-icons';
 import { register as apiRegister } from '@/lib/auth';
-import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import React from 'react';
+import { Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function RegisterScreen() {
-  const [email, setEmail] = React.useState('leminhtrong@gmail.com');
+  const [email, setEmail] = React.useState('');
   const [username, setUsername] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
@@ -20,6 +19,7 @@ export default function RegisterScreen() {
   const [agree, setAgree] = React.useState(true);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string[]>>({});
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -35,57 +35,83 @@ export default function RegisterScreen() {
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Email</Text>
-          <View style={styles.inputWrapActive}>
+          <View style={[styles.inputWrapActive, fieldErrors.Email && styles.inputInvalid]}>
             <TextInput
-              placeholder="Email"
+              placeholder="user@gmail.com"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(v) => {
+                setEmail(v);
+                if (error) setError(null);
+                if (fieldErrors.Email) setFieldErrors(prev => { const next = { ...prev }; delete next.Email; return next; });
+              }}
               keyboardType="email-address"
               autoCapitalize="none"
               style={styles.input}
               placeholderTextColor="#9BA1A6"
             />
           </View>
+          {fieldErrors.Email?.length ? (
+            <Text style={styles.errorFieldText}>{fieldErrors.Email[0]}</Text>
+          ) : null}
         </View>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Username</Text>
-          <View style={styles.inputWrap}>
+          <View style={[styles.inputWrap, fieldErrors.Username && styles.inputInvalid]}>
             <TextInput
-              placeholder="Username"
+              placeholder="Alex123"
               value={username}
-              onChangeText={setUsername}
+              onChangeText={(v) => {
+                setUsername(v);
+                if (error) setError(null);
+                if (fieldErrors.Username) setFieldErrors(prev => { const next = { ...prev }; delete next.Username; return next; });
+              }}
               autoCapitalize="none"
               style={styles.input}
               placeholderTextColor="#9BA1A6"
             />
           </View>
+          {fieldErrors.Username?.length ? (
+            <Text style={styles.errorFieldText}>{fieldErrors.Username[0]}</Text>
+          ) : null}
         </View>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Mật khẩu</Text>
-          <View style={styles.inputWrap}>
+          <View style={[styles.inputWrap, fieldErrors.Password && styles.inputInvalid]}>
             <TextInput
-              placeholder="Password"
+              placeholder="Abcd@123"
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(v) => {
+                setPassword(v);
+                if (error) setError(null);
+                if (fieldErrors.Password) setFieldErrors(prev => { const next = { ...prev }; delete next.Password; return next; });
+              }}
               secureTextEntry={secure}
-              style={[styles.input, { flex: 1 }]}
+              //tăng độ cao input
+              style={[styles.input, { flex: 1, height: 56, width: '100%' }]}
               placeholderTextColor="#9BA1A6"
             />
             <TouchableOpacity onPress={() => setSecure(s => !s)} style={styles.eyeBtn}>
               <Ionicons name={secure ? 'eye-off-outline' : 'eye-outline'} size={20} color="#9BA1A6" />
             </TouchableOpacity>
           </View>
+          {fieldErrors.Password?.length ? (
+            <Text style={styles.errorFieldText}>{fieldErrors.Password[0]}</Text>
+          ) : null}
         </View>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Xác nhận mật khẩu</Text>
-          <View style={styles.inputWrap}>
+          <View style={[styles.inputWrap, fieldErrors.ConfirmPassword && styles.inputInvalid]}>
             <TextInput
-              placeholder="Confirm Password"
+              placeholder="********"
               value={confirmPassword}
-              onChangeText={setConfirmPassword}
+              onChangeText={(v) => {
+                setConfirmPassword(v);
+                if (error) setError(null);
+                if (fieldErrors.ConfirmPassword) setFieldErrors(prev => { const next = { ...prev }; delete next.ConfirmPassword; return next; });
+              }}
               secureTextEntry={secureConfirm}
               style={[styles.input, { flex: 1 }]}
               placeholderTextColor="#9BA1A6"
@@ -94,37 +120,54 @@ export default function RegisterScreen() {
               <Ionicons name={secureConfirm ? 'eye-off-outline' : 'eye-outline'} size={20} color="#9BA1A6" />
             </TouchableOpacity>
           </View>
+          {fieldErrors.ConfirmPassword?.length ? (
+            <Text style={styles.errorFieldText}>{fieldErrors.ConfirmPassword[0]}</Text>
+          ) : null}
         </View>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Họ và tên</Text>
-          <View style={styles.inputWrap}>
+          <View style={[styles.inputWrap, fieldErrors.FullName && styles.inputInvalid]}>
             <TextInput
-              placeholder="Họ và tên"
+              placeholder="Nguyễn Văn A"
               value={fullName}
-              onChangeText={setFullName}
+              onChangeText={(v) => {
+                setFullName(v);
+                if (error) setError(null);
+                if (fieldErrors.FullName) setFieldErrors(prev => { const next = { ...prev }; delete next.FullName; return next; });
+              }}
               autoCapitalize="words"
               style={styles.input}
               placeholderTextColor="#9BA1A6"
             />
           </View>
+          {fieldErrors.FullName?.length ? (
+            <Text style={styles.errorFieldText}>{fieldErrors.FullName[0]}</Text>
+          ) : null}
         </View>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Số điện thoại</Text>
-          <View style={styles.inputWrap}>
+          <View style={[styles.inputWrap, fieldErrors.PhoneNumber && styles.inputInvalid]}>
             <TextInput
-              placeholder="Số điện thoại"
+              placeholder="0123 456 789"
               value={phoneNumber}
-              onChangeText={setPhoneNumber}
+              onChangeText={(v) => {
+                setPhoneNumber(v);
+                if (error) setError(null);
+                if (fieldErrors.PhoneNumber) setFieldErrors(prev => { const next = { ...prev }; delete next.PhoneNumber; return next; });
+              }}
               keyboardType="phone-pad"
               style={styles.input}
               placeholderTextColor="#9BA1A6"
             />
           </View>
+          {fieldErrors.PhoneNumber?.length ? (
+            <Text style={styles.errorFieldText}>{fieldErrors.PhoneNumber[0]}</Text>
+          ) : null}
         </View>
 
-        <View style={styles.fieldGroup}>
+        {/* <View style={styles.fieldGroup}>
           <Text style={styles.label}>Ảnh đại diện</Text>
           {profilePictureUrl ? (
             <View style={styles.avatarRow}>
@@ -164,9 +207,9 @@ export default function RegisterScreen() {
                 }
               }}
             >
-              <Text style={styles.secondaryText}>Choose from library</Text>
+              <Text style={styles.secondaryText}><Ionicons name="cloud-upload-outline" size={20} color="#9BA1A6" /> Upload</Text>
             </TouchableOpacity>
-            {/* <View style={[styles.inputWrap, { flex: 1 }]}> 
+            <View style={[styles.inputWrap, { flex: 1 }]}> 
               <TextInput
                 placeholder="Hoặc dán URL: https://..."
                 value={profilePictureUrl}
@@ -176,9 +219,9 @@ export default function RegisterScreen() {
                 style={[styles.input, { flex: 1 }]}
                 placeholderTextColor="#9BA1A6"
               />
-            </View> */}
+            </View>
           </View>
-        </View>
+        </View> */}
 
         <TouchableOpacity style={styles.checkboxRow} onPress={() => setAgree(a => !a)}>
           <View style={[styles.checkbox, agree && styles.checkboxChecked]}>
@@ -187,7 +230,7 @@ export default function RegisterScreen() {
           <Text style={styles.checkboxLabel}>Đồng ý với điều khoản và chính sách bảo mật</Text>
         </TouchableOpacity>
 
-        {error ? <Text style={{ color: '#B00020', marginTop: 8 }}>{error}</Text> : null}
+        {/* {registererror ? <Text style={{ color: '#B00020', marginTop: 8 }}>{error}</Text> : null} */}
         <TouchableOpacity
           style={[styles.primaryBtn, (!agree || loading) && { opacity: 0.7 }]}
           disabled={!agree || loading}
@@ -195,13 +238,38 @@ export default function RegisterScreen() {
             setError(null);
             setLoading(true);
             try {
-              if (!email || !username || !password) throw new Error('Vui lòng nhập đầy đủ Email, Username, Mật khẩu');
-              if (password !== confirmPassword) throw new Error('Mật khẩu xác nhận không khớp');
-              await apiRegister({ username, email, password, fullName, phoneNumber, profilePictureUrl });
-              // After register, redirect to login for now
+              // Clear previous field errors
+              setFieldErrors({});
+
+              // Aggregate client-side validations so ALL errors show at once
+              const errs: Record<string, string[]> = {};
+              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+              if (!emailRegex.test(email)) errs.Email = ['Vui lòng nhập đúng định dạng email'];
+              if (username.length < 3 || username.length > 50) errs.Username = ['Username phải ít nhất 3 ký tự'];
+              if (password.length < 6 || password.length > 255) errs.Password = ['Tối thiểu 6 ký tự, gồm ít nhất 1 số và 1 ký tự đặc biệt (!@#$...)'];
+              if (password !== confirmPassword) errs.ConfirmPassword = ['Mật khẩu xác nhận không khớp'];
+              if (fullName && fullName.trim().length < 2) errs.FullName = ['Họ và tên quá ngắn'];
+              if (phoneNumber && phoneNumber.trim().length < 8) errs.PhoneNumber = ['Số điện thoại không hợp lệ'];
+
+              if (Object.keys(errs).length > 0) {
+                setFieldErrors(errs);
+                setError('Vui lòng kiểm tra lại các trường');
+                return; // Do not call API when client validations fail
+              }
+
+              // Call API; if backend returns multiple errors, show them all
+              await apiRegister({ username, email, password, fullName, phoneNumber, role: 'user' });
+            
+
               router.replace('/login' as any);
             } catch (e: any) {
-              setError(e?.message || 'Đăng ký thất bại');
+              const apiErrors = e?.errors || e?.data?.errors;
+              if (apiErrors && typeof apiErrors === 'object') {
+                setFieldErrors(apiErrors);
+                setError('Vui lòng kiểm tra lại các trường');
+              } else {
+                setError(e?.message || 'Đăng ký thất bại');
+              }
             } finally {
               setLoading(false);
             }
@@ -287,6 +355,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     justifyContent: 'center',
     backgroundColor: '#fff',
+  },
+  inputInvalid: {
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEF2F2',
   },
   input: {
     fontSize: 16,
@@ -382,4 +454,9 @@ const styles = StyleSheet.create({
   avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#F2F3F5' },
   clearBtn: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#FEE2E2', borderRadius: 8 },
   clearText: { color: '#B91C1C', fontWeight: '600' },
+  errorFieldText: {
+    color: '#B91C1C',
+    marginTop: 6,
+    fontSize: 12,
+  },
 });
