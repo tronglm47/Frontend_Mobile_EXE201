@@ -15,6 +15,7 @@ export default function LoginScreen() {
   const [secure, setSecure] = React.useState(true);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string[]>>({});
 
   // Smooth error banner fade and prevent layout jump
   const errorOpacity = React.useRef(new Animated.Value(0)).current;
@@ -38,41 +39,83 @@ export default function LoginScreen() {
         <Text style={styles.sub}>Vui lòng đăng nhập bằng email, mật khẩu hoặc tài khoản mạng xã hội để tiếp tục</Text>
 
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Email</Text>
-          <View style={styles.inputWrapActive}>
+          <Text style={styles.label}>Username</Text>
+          <View style={[styles.inputWrapActive, fieldErrors.Username && styles.inputInvalid]}>
             <TextInput
-              placeholder="Email"
+              placeholder="Username"
               value={email}
               onChangeText={(v) => {
                 setEmail(v);
                 if (error) setError(null);
+                if (fieldErrors.Username) {
+                  setFieldErrors(prev => {
+                    const next = { ...prev };
+                    delete next.Username;
+                    return next;
+                  });
+                }
               }}
-              keyboardType="email-address"
               autoCapitalize="none"
               style={styles.input}
               placeholderTextColor="#9BA1A6"
+              onBlur={() => {
+                const v = email.trim();
+                setFieldErrors(prev => {
+                  const next = { ...prev };
+                  if (v.length < 3 || v.length > 50) {
+                    next.Username = ['Tên đăng nhập phải từ 3 đến 50 ký tự'];
+                  } else {
+                    delete next.Username;
+                  }
+                  return next;
+                });
+              }}
             />
           </View>
+          {fieldErrors.Username?.length ? (
+            <Text style={styles.errorFieldText}>{fieldErrors.Username[0]}</Text>
+          ) : null}
         </View>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Mật khẩu</Text>
-          <View style={styles.inputWrap}>
+          <View style={[styles.inputWrap, fieldErrors.Password && styles.inputInvalid]}>
             <TextInput
               placeholder="Password"
               value={password}
               onChangeText={(v) => {
                 setPassword(v);
                 if (error) setError(null);
+                if (fieldErrors.Password) {
+                  setFieldErrors(prev => {
+                    const next = { ...prev };
+                    delete next.Password;
+                    return next;
+                  });
+                }
               }}
               secureTextEntry={secure}
               style={[styles.input, { flex: 1 }]}
               placeholderTextColor="#9BA1A6"
+              onBlur={() => {
+                setFieldErrors(prev => {
+                  const next = { ...prev };
+                  if (password.length < 6 || password.length > 255) {
+                    next.Password = ['Mật khẩu phải từ 6 đến 255 ký tự'];
+                  } else {
+                    delete next.Password;
+                  }
+                  return next;
+                });
+              }}
             />
             <TouchableOpacity onPress={() => setSecure(s => !s)} style={styles.eyeBtn}>
               <Ionicons name={secure ? 'eye-off-outline' : 'eye-outline'} size={20} color="#9BA1A6" />
             </TouchableOpacity>
           </View>
+          {fieldErrors.Password?.length ? (
+            <Text style={styles.errorFieldText}>{fieldErrors.Password[0]}</Text>
+          ) : null}
         </View>
 
         <View style={styles.rowBetween}>
@@ -88,14 +131,14 @@ export default function LoginScreen() {
         </View>
 
         {/* Error area reserves space to avoid layout shift */}
-        <View style={styles.errorArea}>
+        {/* <View style={styles.errorArea}>
           <Animated.View style={[styles.errorBanner, { opacity: errorOpacity }]}> 
             <Ionicons name="alert-circle" size={18} color="#DC2626" style={{ marginRight: 8 }} />
             <Text style={styles.errorText} numberOfLines={2}>
               {lastErrorRef.current || ''}
             </Text>
           </Animated.View>
-        </View>
+        </View> */}
 
         <TouchableOpacity
           style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
@@ -103,6 +146,22 @@ export default function LoginScreen() {
           onPress={async () => {
             setLoading(true);
             try {
+              // Client-side validations: show ALL issues at once
+           
+              const errs: Record<string, string[]> = {};
+              if (email.trim().length < 3 || email.trim().length > 50) {
+                errs.Username = ['Tên đăng nhập phải từ 3 đến 50 ký tự'];
+              }
+              if (password.length < 6 || password.length > 255) {
+                errs.Password = ['Mật khẩu phải từ 6 đến 255 ký tự'];
+              }
+
+              if (Object.keys(errs).length > 0) {
+                setFieldErrors(errs);
+                setError('Vui lòng kiểm tra lại các trường');
+                return;
+              }
+
               // API expects username + password
               await apiLogin({ username: email, password });
               const seenPlans = await AsyncStorage.getItem('hasSeenPlans');
@@ -116,7 +175,13 @@ export default function LoginScreen() {
                 router.replace('/choose-plan' as any);
               }
             } catch (e: any) {
-              setError(e?.message || 'Đăng nhập thất bại');
+              const apiErrors = e?.errors || e?.data?.errors;
+              if (apiErrors && typeof apiErrors === 'object') {
+                setFieldErrors(apiErrors);
+                // setError('Vui lòng kiểm tra lại các trường');
+              } else {
+                setError(e?.message || 'Đăng nhập thất bại');
+              }
             } finally {
               setLoading(false);
             }
@@ -199,6 +264,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     justifyContent: 'center',
     backgroundColor: '#fff',
+  },
+  inputInvalid: {
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEF2F2',
   },
   input: {
     fontSize: 16,
@@ -321,5 +390,10 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#B91C1C', // red-700
     flex: 1,
+  },
+  errorFieldText: {
+    color: '#B91C1C',
+    marginTop: 6,
+    fontSize: 12,
   },
 });
