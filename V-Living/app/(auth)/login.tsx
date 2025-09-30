@@ -1,15 +1,16 @@
 import { Colors } from '@/constants/theme';
-import { login as apiLogin } from '@/lib/auth';
+import { login as apiLogin } from '@/apis/auth';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import { Animated, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LoginScreen() {
-  const [email, setEmail] = React.useState('admin');
-  const [password, setPassword] = React.useState('');
+  const params = useLocalSearchParams<{ prefill?: string; pwd?: string }>();
+  const [email, setEmail] = React.useState<string>(() => (params?.prefill ? String(params.prefill) : 'admin'));
+  const [password, setPassword] = React.useState<string>(() => (params?.pwd ? String(params.pwd) : ''));
   const [remember, setRemember] = React.useState(true);
   const [secure, setSecure] = React.useState(true);
   const [loading, setLoading] = React.useState(false);
@@ -105,7 +106,15 @@ export default function LoginScreen() {
               // API expects username + password
               await apiLogin({ username: email, password });
               const seenPlans = await AsyncStorage.getItem('hasSeenPlans');
-              router.replace((seenPlans === 'true' ? '/(tabs)' : '/choose-plan') as any);
+              const hasLocation = await AsyncStorage.getItem('selectedLocation');
+              
+              if (seenPlans === 'true') {
+                // Đã xem combo, check location
+                router.replace((hasLocation ? '/(tabs)' : '/location-selection') as any);
+              } else {
+                // Chưa xem combo
+                router.replace('/choose-plan' as any);
+              }
             } catch (e: any) {
               setError(e?.message || 'Đăng nhập thất bại');
             } finally {

@@ -8,7 +8,8 @@ export default function Index() {
   const [ready, setReady] = React.useState(false);
   const [hasSeen, setHasSeen] = React.useState<boolean | null>(null);
   const [hasToken, setHasToken] = React.useState<boolean | null>(null);
-    const [hasSeenPlans, setHasSeenPlans] = React.useState<boolean | null>(null);
+  const [hasSeenPlans, setHasSeenPlans] = React.useState<boolean | null>(null);
+  const [hasSelectedLocation, setHasSelectedLocation] = React.useState<boolean | null>(null);
 
   const MIN_LOADING_MS = 5000;
 
@@ -33,15 +34,17 @@ export default function Index() {
     (async () => {
       const start = Date.now();
       try {
-          const [seenFlag, token, plansFlag] = await Promise.all([
+          const [seenFlag, token, plansFlag, locationData] = await Promise.all([
           AsyncStorage.getItem('hasSeenOnboarding'),
           AsyncStorage.getItem('authToken'),
-            AsyncStorage.getItem('hasSeenPlans'),
+          AsyncStorage.getItem('hasSeenPlans'),
+          AsyncStorage.getItem('selectedLocation'),
           preloadAssets(),
         ]);
         setHasSeen(seenFlag === 'true');
         setHasToken(Boolean(token));
-          setHasSeenPlans(plansFlag === 'true');
+        setHasSeenPlans(plansFlag === 'true');
+        setHasSelectedLocation(Boolean(locationData));
       } finally {
         const elapsed = Date.now() - start;
         const wait = Math.max(0, MIN_LOADING_MS - elapsed);
@@ -56,17 +59,18 @@ export default function Index() {
     };
   }, [preloadAssets]);
 
-    if (!ready || hasSeen === null || hasToken === null || hasSeenPlans === null) return <LoadingScreen />;
+    if (!ready || hasSeen === null || hasToken === null || hasSeenPlans === null || hasSelectedLocation === null) return <LoadingScreen />;
 
   // Routing:
-  // - If logged in: go home tabs
+  // - If logged in: check location selection, then go home tabs
   // - Else if already saw onboarding: go to login
   // - Else: show onboarding
   const target = hasToken
-      ? (hasSeenPlans ? '/(tabs)' : '/choose-plan')
+    ? (hasSeenPlans 
+        ? (hasSelectedLocation ? '/(tabs)' : '/location-selection')
+        : '/choose-plan')
     : hasSeen
     ? '/onboarding'
     : '/login';
-
   return <Redirect href={target as any} />;
 }

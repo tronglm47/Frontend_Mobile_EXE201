@@ -51,4 +51,5 @@ export function useFavorites() {
   return ctx;
 }
 
-
+// Default export để tránh warning
+export default FavoritesProvider;

@@ -4,7 +4,7 @@ import { Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, Touchable
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { register as apiRegister } from '@/lib/auth';
+import { register as apiRegister } from '@/apis/auth';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function RegisterScreen() {
@@ -198,8 +198,8 @@ export default function RegisterScreen() {
               if (!email || !username || !password) throw new Error('Vui lòng nhập đầy đủ Email, Username, Mật khẩu');
               if (password !== confirmPassword) throw new Error('Mật khẩu xác nhận không khớp');
               await apiRegister({ username, email, password, fullName, phoneNumber, profilePictureUrl });
-              // After register, redirect to login for now
-              router.replace('/login' as any);
+              // After register, go to verify email screen, pass password for later prefill
+              router.replace({ pathname: '/verify-email', params: { email, username, password } } as any);
             } catch (e: any) {
               setError(e?.message || 'Đăng ký thất bại');
             } finally {

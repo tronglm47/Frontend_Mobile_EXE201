@@ -100,7 +100,8 @@ export default function ChoosePlanScreen() {
         await AsyncStorage.setItem('selectedPlanId', selectedPlan.id);
       }
     } catch {}
-    router.replace('/(tabs)');
+    // Sau khi xem combo, chuyển đến location selection
+    router.replace('/location-selection');
   };
 
   const renderItem = ({ item, index: i }: { item: Plan; index: number }) => {

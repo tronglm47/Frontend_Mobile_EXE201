@@ -7,23 +7,53 @@ import { Colors, Fonts } from '@/constants/theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useFavorites } from '../favorites-context';
+import { useLocation } from '../location-context';
 import { LISTINGS } from '../listings';
+import { fetchPosts, PostItem } from '../../apis/posts';
+import { fetchLocations, LocationItem } from '../../apis/locations';
 
 const IMG = (seed: string, w = 600, h = 400) =>
   `https://picsum.photos/seed/${seed}/${w}/${h}`;
 
 export default function HomeTab() {
   const { isFav, toggle } = useFavorites();
+  const { selectedLocation } = useLocation();
+  const [posts, setPosts] = React.useState<PostItem[] | null>(null);
+  const [loadingPosts, setLoadingPosts] = React.useState(false);
+  const [locations, setLocations] = React.useState<Record<number, LocationItem>>({});
 
   const goDetail = React.useCallback((id?: string) => router.push({ pathname: '/detail', params: id ? { id } : undefined } as any), []);
 
   const openFilter = React.useCallback(() => {
     Alert.alert('Bộ lọc', 'Tính năng bộ lọc sẽ được bổ sung sau.');
   }, []);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        setLoadingPosts(true);
+        const [data, locs] = await Promise.all([fetchPosts(), fetchLocations()]);
+        if (isMounted) {
+          setPosts(data);
+          const map: Record<number, LocationItem> = {};
+          locs.forEach((l) => { map[l.locationId] = l; });
+          setLocations(map);
+        }
+      } catch (e) {
+        console.warn('Failed to load posts:', e);
+        if (isMounted) setPosts([]);
+      } finally {
+        if (isMounted) setLoadingPosts(false);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 24 }}>
-      <Header />
+      <Header location={selectedLocation} />
 
       <SearchBar onFilterPress={openFilter} />
 
@@ -57,20 +87,32 @@ export default function HomeTab() {
 
       <Section title="Phổ Biến Dành Cho Bạn" onViewAll={() => router.push({ pathname: '/popular' } as any)}>
         <View style={{ gap: 12 }}>
-          {LISTINGS.map((l) => (
-            <ListItem
-              key={l.id}
-              id={l.id}
-              seed={l.seed}
-              title={l.title}
-              subTitle={l.area}
-              price={l.price}
-              rating={l.rating}
-              isFav={isFav(l.id)}
-              onToggleFav={() => toggle(l.id)}
-              onPress={() => goDetail(l.id)}
-            />
-          ))}
+          {(posts && posts.length > 0 ? posts : LISTINGS).map((item: any) => {
+            const id = String(item.postId || item.id);
+            const title = item.title || item.title;
+            const locName = item.locationId ? locations[item.locationId]?.name : undefined;
+            const subTitle = locName || item.area || 'Bất động sản';
+            const priceVal: number | undefined = typeof item.price === 'number' ? item.price : undefined;
+            const price = priceVal ?
+              new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(priceVal)
+              : (item.price || 'Liên hệ');
+            const seed = item.seed || id;
+            const rating = item.rating || 4.5;
+            return (
+              <ListItem
+                key={id}
+                id={id}
+                seed={seed}
+                title={title}
+                subTitle={subTitle}
+                price={price}
+                rating={rating}
+                isFav={isFav(id)}
+                onToggleFav={() => toggle(id)}
+                onPress={() => goDetail(id)}
+              />
+            );
+          })}
         </View>
       </Section>
     </ScrollView>
@@ -78,14 +120,22 @@ export default function HomeTab() {
   );
 }
 
-function Header() {
+function Header({ location }: { location: any }) {
+  const displayAddress = location?.address || 'Chọn địa chỉ';
+  
   return (
     <View style={styles.headerWrap}>
       <View style={{ flex: 1 }}>
         <Text style={styles.addressLabel}>Địa chỉ</Text>
-        <TouchableOpacity style={styles.addressRow} activeOpacity={0.8}>
+        <TouchableOpacity
+          style={styles.addressRow}
+          activeOpacity={0.8}
+          onPress={() => router.push('/location-selection')}
+        >
           <MaterialIcons name="location-on" size={18} color="#E0B100" />
-          <Text style={styles.addressText}>Vinhomes, Quận 9</Text>
+          <Text style={styles.addressText} numberOfLines={1}>
+            {displayAddress}
+          </Text>
           <MaterialIcons name="expand-more" size={18} color="#9BA1A6" />
         </TouchableOpacity>
       </View>

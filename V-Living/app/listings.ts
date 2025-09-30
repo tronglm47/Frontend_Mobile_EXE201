@@ -17,4 +17,5 @@ export const LISTINGS: Listing[] = [
 
 export const getListingById = (id: string) => LISTINGS.find((l) => l.id === id);
 
-
+// Default export để tránh warning
+export default LISTINGS;
