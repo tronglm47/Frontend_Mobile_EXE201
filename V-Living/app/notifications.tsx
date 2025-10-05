@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, Image, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useMemo, useRef } from 'react';
+import { Animated, Image, Platform, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 // Inline SVG component to avoid fetch issues on Android
+import { router, Stack } from 'expo-router';
 import NotMail from '../components/illustrations/NotMail';
-import { router } from 'expo-router';
 
 const GOLD = '#E0B100';
 const TEXT = '#111827';
@@ -27,7 +27,7 @@ const AVATARS = [
   require('../assets/images/screenKhoa/6.png'),
 ];
 
-export default function NotificationsScreen() {
+export default function NotificationsScreen({ onClose, ignoreTopSafeArea }: { onClose?: () => void; ignoreTopSafeArea?: boolean }) {
   // Demo: toggle between list and empty by setting arrays
   const today: Noti[] = [
     // { id: 't1', title: 'Chúc mừng, bài viết của bạn đã được đăng.', subtitle: 'Chạm vào đây để xem chi tiết', type: 'bell', read: false },
@@ -61,10 +61,12 @@ export default function NotificationsScreen() {
   ), [bob]);
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+    <SafeAreaView style={styles.safe} edges={ignoreTopSafeArea ? ['left','right','bottom'] : undefined}>
       <StatusBar barStyle={Platform.OS === 'ios' ? 'dark-content' : 'default'} />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => (onClose ? onClose() : router.back())} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={TEXT} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Thông báo</Text>
@@ -94,6 +96,7 @@ export default function NotificationsScreen() {
         </ScrollView>
       )}
     </SafeAreaView>
+    </>
   );
 }
 
@@ -158,6 +161,6 @@ const styles = StyleSheet.create({
   rowSub: { color: MUTED, marginTop: 4 },
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: DANGER, marginLeft: 8, position: 'absolute', top: 4, right: 4 },
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
-  emptyTitle: { marginTop: 16, fontWeight: '800', color: TEXT, fontSize: 18 },
+  emptyTitle: { marginTop: 16, fontWeight: '800', color: TEXT, fontSize: 18, width: '100%', textAlign: 'center' },
   emptySub: { textAlign: 'center', color: MUTED, marginTop: 8 },
 });

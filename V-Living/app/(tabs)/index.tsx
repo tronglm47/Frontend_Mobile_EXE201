@@ -1,16 +1,18 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
-import { Image } from 'expo-image';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Colors, Fonts } from '@/constants/theme';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { Image } from 'expo-image';
+import React from 'react';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 // Alert imported above
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { FloatingChatbot } from '@/components/chatbot/FloatingChatbot';
 import { router } from 'expo-router';
-import { useFavorites } from '../favorites-context';
-import { useLocation } from '../location-context';
-import { LISTINGS } from '../listings';
-import { fetchPosts, PostItem } from '../../apis/posts';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchLocations, LocationItem } from '../../apis/locations';
+import { fetchPosts, PostItem } from '../../apis/posts';
+import { useFavorites } from '../favorites-context';
+import { LISTINGS } from '../listings';
+import { useLocation } from '../location-context';
+import NotificationsScreen from '../notifications';
 
 const IMG = (seed: string, w = 600, h = 400) =>
   `https://picsum.photos/seed/${seed}/${w}/${h}`;
@@ -21,6 +23,7 @@ export default function HomeTab() {
   const [posts, setPosts] = React.useState<PostItem[] | null>(null);
   const [loadingPosts, setLoadingPosts] = React.useState(false);
   const [locations, setLocations] = React.useState<Record<number, LocationItem>>({});
+  const [showNotifications, setShowNotifications] = React.useState(false);
 
   const goDetail = React.useCallback((id?: string) => router.push({ pathname: '/detail', params: id ? { id } : undefined } as any), []);
 
@@ -53,7 +56,7 @@ export default function HomeTab() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 24 }}>
-      <Header location={selectedLocation} />
+  <Header location={selectedLocation} onOpenNotifications={() => setShowNotifications(true)} />
 
       <SearchBar onFilterPress={openFilter} />
 
@@ -116,11 +119,22 @@ export default function HomeTab() {
         </View>
       </Section>
     </ScrollView>
+    <FloatingChatbot />
+    {/* Notifications Modal */}
+    <Modal
+      visible={showNotifications}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      statusBarTranslucent={true}
+      onRequestClose={() => setShowNotifications(false)}
+    >
+      <NotificationsScreen ignoreTopSafeArea onClose={() => setShowNotifications(false)} />
+    </Modal>
     </SafeAreaView>
   );
 }
 
-function Header({ location }: { location: any }) {
+function Header({ location, onOpenNotifications }: { location: any; onOpenNotifications: () => void }) {
   const displayAddress = location?.address || 'Chọn địa chỉ';
   
   return (
@@ -140,16 +154,16 @@ function Header({ location }: { location: any }) {
         </TouchableOpacity>
       </View>
       <View style={styles.actionsRow}>
-        <IconButton name="notifications-none" />
+        <IconButton name="notifications-none" onPress={onOpenNotifications} />
         <IconButton name="chat-bubble-outline" />
       </View>
     </View>
   );
 }
 
-function IconButton({ name }: { name: React.ComponentProps<typeof MaterialIcons>['name'] }) {
+function IconButton({ name, onPress }: { name: React.ComponentProps<typeof MaterialIcons>['name']; onPress?: () => void }) {
   return (
-    <TouchableOpacity activeOpacity={0.8} style={styles.iconButton}>
+    <TouchableOpacity activeOpacity={0.8} style={styles.iconButton} onPress={onPress}>
       <MaterialIcons name={name} size={20} color={Colors.light.text} />
     </TouchableOpacity>
   );
@@ -284,9 +298,14 @@ function ListItem({ id, seed, title, subTitle, price, rating, isFav, onToggleFav
       <TouchableOpacity style={styles.heartBtn} onPress={(e) => { e.stopPropagation?.(); onToggleFav(); }}>
         <MaterialIcons name={isFav ? 'favorite' : 'favorite-border'} size={18} color={isFav ? '#E91E63' : Colors.light.text} />
       </TouchableOpacity>
+      
     </TouchableOpacity>
+    
+   
   );
+  
 }
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 16 },
