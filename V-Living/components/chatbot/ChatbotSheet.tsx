@@ -1,12 +1,12 @@
-import React, { useRef, useState } from 'react';
-import { Modal, StyleSheet, Text, TextInput, TouchableOpacity, View, FlatList, KeyboardAvoidingView, Platform, Image, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useRef, useState } from 'react';
+import { FlatList, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import ChatbotIcon from './ChatbotIcon';
 
 const GOLD = '#E0B100';
 const TEXT = '#111827';
 
 type BotMsg = { id: string; fromBot?: boolean; text: string; time?: string };
-const BOT_ICON = require('../../assets/images/chatboticon/bott.svg');
 
 export function ChatbotSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const [messages, setMessages] = useState<BotMsg[]>([
@@ -36,7 +36,7 @@ export function ChatbotSheet({ visible, onClose }: { visible: boolean; onClose: 
         <View style={styles.sheet}>
           <View style={styles.sheetHeader}>
             <View style={styles.headerLeft}>
-              <Image source={BOT_ICON} style={styles.botAvatar} />
+              <ChatbotIcon width={26} height={26} />
               <Text style={styles.botTitle}>V-Living Bot</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.headerCloseBtn}>

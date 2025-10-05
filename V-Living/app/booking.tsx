@@ -1,17 +1,18 @@
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
   Image,
   Platform,
+  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  SafeAreaView,
 } from 'react-native';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import EmptyBooking from '../components/illustrations/EmptyBooking';
 
 const GOLD = '#E0B100';
 const BORDER = '#E5E7EB';
@@ -39,8 +40,8 @@ export default function BookingScreen() {
 
   // demo data
   const upcoming: Booking[] = [
-    { id: '1', title: 'Origami S10.02', place: 'Origami', range: '12/08 - 12/08', image: thumbs[0], status: 'pendingPay' },
-    { id: '2', title: 'Beverly B2', place: 'Beverly', range: '08/08 - 12/08', image: thumbs[1], status: 'processing' },
+    // { id: '1', title: 'Origami S10.02', place: 'Origami', range: '12/08 - 12/08', image: thumbs[0], status: 'pendingPay' },
+    // { id: '2', title: 'Beverly B2', place: 'Beverly', range: '08/08 - 12/08', image: thumbs[1], status: 'processing' },
   ];
   const completed: Booking[] = [
     { id: '3', title: 'Beverly Solari BS10', place: 'Beverly Solari', range: '08/08 - 12/08', image: thumbs[2], status: 'done' },
@@ -152,7 +153,7 @@ function ActionRow({ icon, color, label, onPress }: { icon: any; color: string; 
 function EmptyState() {
   return (
     <View style={styles.emptyWrap}>
-      <Image source={require('../assets/images/notFound/error.png')} style={styles.emptyImg} />
+      <EmptyBooking width={300} height={220} />
       {/* <Text style={styles.emptyTitle}>Opps!!</Text> */}
       <Text style={styles.emptySub}>Bạn chưa có lịch hẹn</Text>
       <Text style={styles.emptySub2}>Bạn đang tìm lịch hẹn <Text style={{ color: GOLD, fontWeight: '700' }}>hoàn thành</Text> hoặc <Text style={{ color: GOLD, fontWeight: '700' }}>đã hủy</Text></Text>
