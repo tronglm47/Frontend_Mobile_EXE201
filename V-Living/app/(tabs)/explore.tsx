@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from '@/components/Toast';
 import { Colors } from '@/constants/theme';
-import { fetchUtilities, fetchBuildings, createLandlordPostWithImages, createUserPost, Utility, Building, LandlordPostBody, UserPostBody } from '@/apis/posts';
+import { fetchUtilities, fetchBuildings, fetchBuildingsPage, createLandlordPostWithImages, createUserPost, Utility, Building, LandlordPostBody, UserPostBody } from '@/apis/posts';
 import { router } from 'expo-router';
 
 export default function CreatePostTab() {
@@ -18,6 +18,10 @@ export default function CreatePostTab() {
   const [primaryImageIndex, setPrimaryImageIndex] = useState<number>(0);
   const [userSubmitting, setUserSubmitting] = useState(false);
   const [userForm, setUserForm] = useState<UserPostBody>({ title: '', description: '' });
+  const [showBuildingDropdown, setShowBuildingDropdown] = useState(false);
+  const [buildingPage, setBuildingPage] = useState(1);
+  const [buildingHasMore, setBuildingHasMore] = useState(true);
+  const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('info');
@@ -42,7 +46,7 @@ export default function CreatePostTab() {
       area: 0,
       apartmentType: 'studio',
       status: 'available',
-      numberOfBedrooms: 1,
+      numberBathroom: 1,
     },
   });
 
@@ -64,6 +68,21 @@ export default function CreatePostTab() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadMoreBuildings = async () => {
+    if (!buildingHasMore) return;
+    try {
+      const nextPage = buildingPage + 1;
+      const res = await fetchBuildingsPage(nextPage, 20);
+      if (res?.items?.length) {
+        setBuildings(prev => [...prev, ...res.items.filter(b => !prev.some(x => x.buildingId === b.buildingId))]);
+        setBuildingPage(nextPage);
+        setBuildingHasMore(nextPage < (res.totalPages || nextPage));
+      } else {
+        setBuildingHasMore(false);
+      }
+    } catch {}
   };
 
   const handleUtilityToggle = (utilityId: number) => {
@@ -121,7 +140,7 @@ export default function CreatePostTab() {
           area: 0,
           apartmentType: 'studio',
           status: 'available',
-          numberOfBedrooms: 1,
+          numberBathroom: 1,
         },
       });
       setImages([]);
@@ -228,27 +247,55 @@ export default function CreatePostTab() {
 
         {/* Building Selection */}
         <Field label="Tòa nhà *">
-          <TouchableOpacity
-            style={styles.picker}
-            onPress={() => {
-              Alert.alert(
-                'Chọn tòa nhà',
-                '',
-                buildings.map(building => ({
-                  text: building.name,
-                  onPress: () => setForm(prev => ({
-                    ...prev,
-                    apartment: { ...prev.apartment, buildingId: building.buildingId }
-                  }))
-                }))
-              );
-            }}
-          >
-            <Text style={[styles.pickerText, form.apartment.buildingId === 0 && styles.placeholderText]}>
-              {buildings.find(b => b.buildingId === form.apartment.buildingId)?.name || 'Chọn tòa nhà'}
-            </Text>
-            <Ionicons name="chevron-down" size={20} color="#9BA1A6" />
-          </TouchableOpacity>
+          <View style={{ position: 'relative' }}>
+            <TouchableOpacity
+              style={styles.picker}
+              onPress={() => setShowBuildingDropdown(v => !v)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.pickerText, form.apartment.buildingId === 0 && styles.placeholderText]}>
+                {buildings.find(b => b.buildingId === form.apartment.buildingId)?.name || 'Chọn tòa nhà'}
+              </Text>
+              <Ionicons name={showBuildingDropdown ? 'chevron-up' : 'chevron-down'} size={20} color="#9BA1A6" />
+            </TouchableOpacity>
+
+            {showBuildingDropdown && (
+              <View style={styles.dropdown}>
+                <ScrollView keyboardShouldPersistTaps="handled"
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                  onScroll={({ nativeEvent }) => {
+                    const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+                    const nearBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 24;
+                    if (nearBottom) loadMoreBuildings();
+                  }}
+                  scrollEventThrottle={100}
+                >
+                  {buildings.map((building) => (
+                    <TouchableOpacity
+                      key={building.buildingId}
+                      style={[
+                        styles.dropdownItem,
+                        form.apartment.buildingId === building.buildingId && styles.dropdownItemActive,
+                      ]}
+                      onPress={() => {
+                        setForm(prev => ({
+                          ...prev,
+                          apartment: { ...prev.apartment, buildingId: building.buildingId },
+                        }));
+                        setShowBuildingDropdown(false);
+                      }}
+                    >
+                      <Text numberOfLines={1} style={styles.dropdownItemText}>{building.name}</Text>
+                      {form.apartment.buildingId === building.buildingId ? (
+                        <Ionicons name="checkmark" size={18} color="#10B981" />
+                      ) : null}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
         </Field>
 
         {/* Apartment Code */}
@@ -303,39 +350,51 @@ export default function CreatePostTab() {
 
         {/* Apartment Type */}
         <Field label="Loại căn hộ">
-          <TouchableOpacity
-            style={styles.picker}
-            onPress={() => {
-              const types = ['studio', '1-bedroom', '2-bedroom', '3-bedroom', 'penthouse'];
-              Alert.alert(
-                'Chọn loại căn hộ',
-                '',
-                types.map(type => ({
-                  text: type,
-                  onPress: () => setForm(prev => ({
-                    ...prev,
-                    apartment: { ...prev.apartment, apartmentType: type }
-                  }))
-                }))
-              );
-            }}
-          >
-            <Text style={styles.pickerText}>{form.apartment.apartmentType}</Text>
-            <Ionicons name="chevron-down" size={20} color="#9BA1A6" />
-          </TouchableOpacity>
+          <View style={{ position: 'relative' }}>
+            <TouchableOpacity
+              style={styles.picker}
+              onPress={() => setShowTypeDropdown(v => !v)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.pickerText}>{form.apartment.apartmentType || 'Chọn loại căn hộ'}</Text>
+              <Ionicons name={showTypeDropdown ? 'chevron-up' : 'chevron-down'} size={20} color="#9BA1A6" />
+            </TouchableOpacity>
+
+            {showTypeDropdown && (
+              <View style={styles.dropdown}>
+                <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                  {['Studio', '1 phòng ngủ', '2 phòng ngủ', '3 phòng ngủ', 'Biệt thự'].map((type) => (
+                    <TouchableOpacity
+                      key={type}
+                      style={[styles.dropdownItem, form.apartment.apartmentType === type && styles.dropdownItemActive]}
+                      onPress={() => {
+                        setForm(prev => ({ ...prev, apartment: { ...prev.apartment, apartmentType: type } }));
+                        setShowTypeDropdown(false);
+                      }}
+                    >
+                      <Text numberOfLines={1} style={styles.dropdownItemText}>{type}</Text>
+                      {form.apartment.apartmentType === type ? (
+                        <Ionicons name="checkmark" size={18} color="#10B981" />
+                      ) : null}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
         </Field>
 
-        {/* Number of Bedrooms */}
-        <Field label="Số phòng ngủ">
+        {/* Number of Bathrooms */}
+        <Field label="Số phòng tắm">
           <TextInput
             style={styles.input}
-            placeholder="Nhập số phòng ngủ"
-            value={form.apartment.numberOfBedrooms > 0 ? form.apartment.numberOfBedrooms.toString() : ''}
+            placeholder="Nhập số phòng tắm"
+            value={form.apartment.numberBathroom > 0 ? form.apartment.numberBathroom.toString() : ''}
             onChangeText={(text) => {
-              const bedrooms = parseInt(text.replace(/[^0-9]/g, '')) || 0;
+              const bathrooms = parseInt(text.replace(/[^0-9]/g, '')) || 0;
               setForm(prev => ({
                 ...prev,
-                apartment: { ...prev.apartment, numberOfBedrooms: bedrooms }
+                apartment: { ...prev.apartment, numberBathroom: bathrooms }
               }));
             }}
             keyboardType="numeric"
@@ -658,6 +717,41 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#fff',
+  },
+  dropdown: {
+    position: 'absolute',
+    top: 52,
+    left: 0,
+    right: 0,
+    maxHeight: 220, // ~4-5 items
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E6E8EB',
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+    zIndex: 10,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    height: 44,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F1F5F9',
+  },
+  dropdownItemActive: {
+    backgroundColor: '#F9FAFB',
+  },
+  dropdownItemText: {
+    color: Colors.light.text,
+    fontSize: 14,
+    flex: 1,
+    marginRight: 8,
   },
   pickerText: {
     fontSize: 16,

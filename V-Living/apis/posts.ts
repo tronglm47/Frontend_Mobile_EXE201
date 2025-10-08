@@ -12,6 +12,8 @@ export type Building = {
   name: string;
   address?: string;
   createdAt?: string;
+  subdivisionName?: string;
+  buildingName?: string;
 };
 
 export type Apartment = {
@@ -21,7 +23,7 @@ export type Apartment = {
   area: number;
   apartmentType: string;
   status: string;
-  numberOfBedrooms: number;
+  numberBathroom: number;
 };
 
 export type LandlordPostBody = {
@@ -44,6 +46,21 @@ export type PostResponse = {
   postType: string;
 };
 
+// Types for landlord posts listing
+export type LandlordPostItem = {
+  postId: number;
+  title: string;
+  price: number;
+  primaryImageUrl?: string;
+  imageUrl?: string; // sometimes API returns top-level imageUrl
+  images?: { imageId?: number; imageUrl: string; isPrimary?: boolean }[];
+  buildingId?: number; // some responses have top-level buildingId
+  apartment?: {
+    buildingId: number;
+  };
+  createdAt?: string;
+};
+
 // API Functions
 export async function fetchUtilities(): Promise<Utility[]> {
   const res = await api.get<{
@@ -63,6 +80,35 @@ export async function fetchBuildings(): Promise<Building[]> {
     items: Building[];
   }>('Building');
   return res?.items || [];
+}
+
+// Paged fetch to support infinite dropdown loading
+export async function fetchBuildingsPage(page = 1, pageSize = 20): Promise<{
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  items: Building[];
+}> {
+  const res = await api.get<{
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    items: Building[];
+  }>(`Building?page=${page}&pageSize=${pageSize}`);
+  return res;
+}
+
+export async function fetchAllBuildings(): Promise<Building[]> {
+  const first = await api.get<{ currentPage: number; totalPages: number; items: Building[] }>('Building');
+  const items: Building[] = [...(first.items || [])];
+  const totalPages = first.totalPages || 1;
+  for (let p = 2; p <= totalPages; p++) {
+    try {
+      const res = await api.get<{ items: Building[] }>(`Building?page=${p}`);
+      if (res?.items?.length) items.push(...res.items);
+    } catch {}
+  }
+  return items;
 }
 
 export async function createLandlordPost(body: LandlordPostBody): Promise<PostResponse> {
@@ -87,7 +133,7 @@ export async function createLandlordPostWithImages(params: LandlordPostBody & {
   form.append('apartment.area', String(params.apartment.area || 0));
   form.append('apartment.apartmentType', params.apartment.apartmentType);
   form.append('apartment.status', params.apartment.status);
-  form.append('apartment.numberOfBedrooms', String(params.apartment.numberOfBedrooms || 0));
+  form.append('apartment.numberBathroom', String(params.apartment.numberBathroom || 0));
 
   if (params.images && params.images.length > 0) {
     params.images.forEach((file) => {
@@ -104,4 +150,23 @@ export async function createLandlordPostWithImages(params: LandlordPostBody & {
 
 export async function createUserPost(body: UserPostBody): Promise<PostResponse> {
   return await api.post<PostResponse>('Post/user', body, true);
+}
+
+// Fetch all landlord posts across pages, sorted latest first
+export async function fetchAllLandlordPosts(): Promise<LandlordPostItem[]> {
+  const first = await api.get<{ currentPage: number; totalPages: number; totalItems: number; items: LandlordPostItem[] }>('Post/landlord');
+  const items: LandlordPostItem[] = [...(first.items || [])];
+  const totalPages = first.totalPages || 1;
+  for (let p = 2; p <= totalPages; p++) {
+    try {
+      const res = await api.get<{ items: LandlordPostItem[] }>(`Post/landlord?page=${p}`);
+      if (res?.items?.length) items.push(...res.items);
+    } catch {}
+  }
+  // Sort by createdAt desc if present, else by postId desc
+  return items.sort((a, b) => {
+    const da = a.createdAt ? Date.parse(a.createdAt) : 0;
+    const db = b.createdAt ? Date.parse(b.createdAt) : 0;
+    return db - da || (b.postId - a.postId);
+  });
 }

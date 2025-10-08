@@ -2,13 +2,13 @@ import { Colors, Fonts } from '@/constants/theme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import React from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, RefreshControl } from 'react-native';
 // Alert imported above
 import { FloatingChatbot } from '@/components/chatbot/FloatingChatbot';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchLocations, LocationItem } from '../../apis/locations';
-import { fetchPosts, PostItem } from '../../apis/posts';
+import { PostItem, fetchAllLandlordPosts, LandlordPostItem, fetchBuildings, Building, fetchAllBuildings } from '../../apis/posts';
 import { useFavorites } from '../favorites-context';
 import { LISTINGS } from '../listings';
 import { useLocation } from '../location-context';
@@ -24,6 +24,8 @@ export default function HomeTab() {
   const [loadingPosts, setLoadingPosts] = React.useState(false);
   const [locations, setLocations] = React.useState<Record<number, LocationItem>>({});
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [refreshKey, setRefreshKey] = React.useState(0);
 
   const goDetail = React.useCallback((id?: string) => router.push({ pathname: '/detail', params: id ? { id } : undefined } as any), []);
 
@@ -36,16 +38,14 @@ export default function HomeTab() {
     (async () => {
       try {
         setLoadingPosts(true);
-        const [data, locs] = await Promise.all([fetchPosts(), fetchLocations()]);
+        const locs = await fetchLocations();
         if (isMounted) {
-          setPosts(data);
           const map: Record<number, LocationItem> = {};
           locs.forEach((l) => { map[l.locationId] = l; });
           setLocations(map);
         }
       } catch (e) {
-        console.warn('Failed to load posts:', e);
-        if (isMounted) setPosts([]);
+        console.warn('Failed to load locations:', e);
       } finally {
         if (isMounted) setLoadingPosts(false);
       }
@@ -53,22 +53,33 @@ export default function HomeTab() {
     return () => { isMounted = false; };
   }, []);
 
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const locs = await fetchLocations();
+      const map: Record<number, LocationItem> = {};
+      locs.forEach((l) => { map[l.locationId] = l; });
+      setLocations(map);
+      setRefreshKey((k) => k + 1); // trigger TrendingSection to refetch latest landlord posts & buildings
+    } catch (e) {
+      console.warn('refresh home failed:', e);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 24 }}>
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 24 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
   <Header location={selectedLocation} onOpenNotifications={() => setShowNotifications(true)} />
 
       <SearchBar onFilterPress={openFilter} />
 
       <PromoBanner />
 
-      <Section title="Xu Hướng">
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowGap16}>
-          {[LISTINGS[0], LISTINGS[1], LISTINGS[2]].map((l) => (
-            <TrendCard key={l.id} onPress={() => goDetail(l.id)} seed={l.seed} title={l.title} price={l.price} />
-          ))}
-        </ScrollView>
-      </Section>
+      <TrendingSection goDetail={goDetail} isFav={isFav} toggleFav={toggle} refreshKey={refreshKey} />
 
       <Section title="Gần Nhất">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.nearScrollContent}>
@@ -209,26 +220,98 @@ function Section({ title, children, onViewAll }: { title: string; children: Reac
   );
 }
 
-function TrendCard({ seed, title, price, onPress }: { seed: string; title: string; price: string; onPress: () => void }) {
+function TrendCard({ images, title, price, badge, onPress, isFav, onToggleFav }: { images: string[]; title: string; price: string; badge?: string; onPress: () => void; isFav: boolean; onToggleFav: () => void }) {
+  const [idx, setIdx] = React.useState(0);
+  React.useEffect(() => {
+    if (!images || images.length <= 1) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % images.length), 3000);
+    return () => clearInterval(t);
+  }, [images]);
   return (
     <TouchableOpacity activeOpacity={0.9} style={styles.trendCard} onPress={onPress}>
-      <Image source={{ uri: IMG(seed, 380, 240) }} style={styles.trendImg} contentFit="cover" />
+      <Image source={{ uri: images?.[idx] || IMG('fallback', 380, 240) }} style={styles.trendImg} contentFit="cover" />
       <View style={styles.trendOverlay}>
         <View style={styles.priceBadge}>
           <Text style={styles.priceBadgeText}>{price}</Text>
         </View>
-        <View style={styles.playBtn}>
-          <MaterialIcons name="play-arrow" size={18} color="#fff" />
-        </View>
+        <TouchableOpacity style={styles.playBtn} onPress={(e) => { e.stopPropagation?.(); onToggleFav(); }} activeOpacity={0.8}>
+          <MaterialIcons name={isFav ? 'favorite' : 'favorite-border'} size={18} color={'#fff'} />
+        </TouchableOpacity>
         <View style={{ position: 'absolute', bottom: 8, left: 8 }}>
           <Text style={styles.trendTitle}>{title}</Text>
           <View style={styles.badgeRow}>
             <MaterialIcons name="apartment" size={14} color="#fff" />
-            <Text style={styles.badgeText}>Beverly</Text>
+            <Text style={styles.badgeText}>{badge || '—'}</Text>
           </View>
         </View>
       </View>
     </TouchableOpacity>
+  );
+}
+
+function TrendingSection({ goDetail, isFav, toggleFav, refreshKey }: { goDetail: (id?: string) => void; isFav: (id: string) => boolean; toggleFav: (id: string) => void; refreshKey: number }) {
+  const [latest, setLatest] = React.useState<LandlordPostItem[] | null>(null);
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [posts, buildings] = await Promise.all([fetchAllLandlordPosts(), fetchAllBuildings()]);
+        if (!mounted) return;
+        // map buildingId -> subdivisionName/name
+        const idToBadge: Record<number, string> = {};
+        buildings.forEach((b: Building) => { if (b.buildingId) idToBadge[b.buildingId] = [b.subdivisionName, b.name, (b as any).buildingName].filter(Boolean)[0]; });
+        // keep only 3 newest
+        setLatest(posts.slice(0, 3).map(p => {
+          const bid = p.apartment?.buildingId || (p as any).buildingId || 0;
+          const badge = idToBadge[bid] || '';
+          return { ...p, subdivisionName: badge } as any;
+        }));
+      } catch (e) {
+        console.warn('Load landlord trending failed:', e);
+        if (mounted) setLatest([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [refreshKey]);
+
+  const fmt = (v?: number) => v && v > 0
+    ? `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(v)} VND`
+    : 'Liên hệ';
+
+  if (!latest || latest.length === 0) {
+    return (
+      <Section title="Xu Hướng">
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowGap16}>
+          {[LISTINGS[0], LISTINGS[1], LISTINGS[2]].map((l) => (
+            <TrendCard key={l.id} onPress={() => goDetail(l.id)} seed={l.seed} title={l.title} price={l.price} />
+          ))}
+        </ScrollView>
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="Xu Hướng">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowGap16}>
+        {latest.map((p: any) => {
+          const imgs = (p.images && p.images.length ? p.images.map((im: any) => im.imageUrl) : []).filter(Boolean);
+          if (!imgs.length && p.primaryImageUrl) imgs.push(p.primaryImageUrl);
+          if (!imgs.length && p.imageUrl) imgs.push(p.imageUrl);
+          const id = String(p.postId);
+          return (
+          <TrendCard
+            key={p.postId}
+            onPress={() => goDetail(id)}
+            images={imgs}
+            title={p.title}
+            price={fmt(p.price)}
+            badge={p.subdivisionName}
+            isFav={isFav(id)}
+            onToggleFav={() => toggleFav(id)}
+          />
+        );})}
+      </ScrollView>
+    </Section>
   );
 }
 
@@ -335,8 +418,8 @@ const styles = StyleSheet.create({
   trendCard: { width: 280, height: 280, borderRadius: 14, overflow: 'hidden', position: 'relative' },
   trendImg: { width: '100%', height: '100%' },
   trendOverlay: { ...StyleSheet.absoluteFillObject },
-  priceBadge: { position: 'absolute', top: 8, left: 8, backgroundColor: '#E0B100', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  priceBadgeText: { color: '#000', fontWeight: '800' as const, fontSize: 12 },
+  priceBadge: { position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(0,0,0,0.8)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  priceBadgeText: { color: '#E0B100', fontWeight: '800' as const, fontSize: 12 },
   playBtn: { position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
   trendTitle: { color: '#fff', fontSize: 16, fontWeight: '700' as const },
   badgeRow: { marginTop: 2, flexDirection: 'row', alignItems: 'center', gap: 4 },
