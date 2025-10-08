@@ -6,6 +6,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import { Animated, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Toast from '@/components/Toast';
 
 export default function LoginScreen() {
   const params = useLocalSearchParams<{ prefill?: string; pwd?: string }>();
@@ -16,6 +17,23 @@ export default function LoginScreen() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string[]>>({});
+  
+  // Toast states
+  const [toastVisible, setToastVisible] = React.useState(false);
+  const [toastMessage, setToastMessage] = React.useState('');
+  const [toastType, setToastType] = React.useState<'success' | 'error' | 'info'>('info');
+
+  // Function to show toast
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  // Function to hide toast
+  const hideToast = () => {
+    setToastVisible(false);
+  };
 
   // Smooth error banner fade and prevent layout jump
   const errorOpacity = React.useRef(new Animated.Value(0)).current;
@@ -32,14 +50,23 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={{ height: 12 }} />
+      <ScrollView 
+        contentContainerStyle={styles.scrollContainer} 
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.content}>
+          <View style={styles.welcomeSection}>
+            <View style={styles.logoContainer}>
+              <Ionicons name="home-outline" size={48} color={GOLD} />
+            </View>
+            <Text style={styles.heading}>Chào mừng đã quay trở lại!</Text>
+            <Text style={styles.sub}>Vui lòng đăng nhập bằng email, mật khẩu hoặc tài khoản mạng xã hội để tiếp tục</Text>
+          </View>
 
-        <Text style={styles.heading}>Chào mừng đã quay trở lại!</Text>
-        <Text style={styles.sub}>Vui lòng đăng nhập bằng email, mật khẩu hoặc tài khoản mạng xã hội để tiếp tục</Text>
-
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Username</Text>
+          <View style={styles.formSection}>
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Username</Text>
           <View style={[styles.inputWrapActive, fieldErrors.Username && styles.inputInvalid]}>
             <TextInput
               placeholder="Username"
@@ -164,23 +191,34 @@ export default function LoginScreen() {
 
               // API expects username + password
               await apiLogin({ username: email, password });
-              const seenPlans = await AsyncStorage.getItem('hasSeenPlans');
-              const hasLocation = await AsyncStorage.getItem('selectedLocation');
               
-              if (seenPlans === 'true') {
-                // Đã xem combo, check location
-                router.replace((hasLocation ? '/(tabs)' : '/location-selection') as any);
-              } else {
-                // Chưa xem combo
-                router.replace('/choose-plan' as any);
-              }
+              // Show success toast
+              showToast('Đăng nhập thành công!', 'success');
+              
+              // Delay navigation to show toast
+              setTimeout(() => {
+                const seenPlans = AsyncStorage.getItem('hasSeenPlans');
+                const hasLocation = AsyncStorage.getItem('selectedLocation');
+                
+                Promise.all([seenPlans, hasLocation]).then(([seenPlansResult, hasLocationResult]) => {
+                  if (seenPlansResult === 'true') {
+                    // Đã xem combo, check location
+                    router.replace((hasLocationResult ? '/(tabs)' : '/location-selection') as any);
+                  } else {
+                    // Chưa xem combo
+                    router.replace('/choose-plan' as any);
+                  }
+                });
+              }, 1500);
             } catch (e: any) {
               const apiErrors = e?.errors || e?.data?.errors;
               if (apiErrors && typeof apiErrors === 'object') {
                 setFieldErrors(apiErrors);
-                // setError('Vui lòng kiểm tra lại các trường');
+                showToast('Vui lòng kiểm tra lại thông tin đăng nhập', 'error');
               } else {
-                setError(e?.message || 'Đăng nhập thất bại');
+                const errorMessage = e?.message || 'Đăng nhập thất bại';
+                setError(errorMessage);
+                showToast(errorMessage, 'error');
               }
             } finally {
               setLoading(false);
@@ -205,13 +243,23 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.footerRow}>
-          <Text style={styles.footerText}>Bạn chưa có tài khoản ? </Text>
-          <TouchableOpacity onPress={() => router.push('/register' as any)}>
-            <Text style={[styles.footerText, styles.footerLink]}>Đăng ký</Text>
-          </TouchableOpacity>
+          </View>
+
+          <View style={styles.footerRow}>
+            <Text style={styles.footerText}>Bạn chưa có tài khoản ? </Text>
+            <TouchableOpacity onPress={() => router.push('/select-role' as any)}>
+              <Text style={[styles.footerText, styles.footerLink]}>Đăng ký</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
+      
+      <Toast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        onHide={hideToast}
+      />
     </SafeAreaView>
   );
 }
@@ -221,49 +269,97 @@ const GOLD = '#E0B100';
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: Colors.light.background,
+    backgroundColor: '#F8FAFC',
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
   },
-  container: {
+  scrollContainer: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingBottom: 20,
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingBottom: 24,
+    paddingVertical: 40,
+  },
+  welcomeSection: {
+    alignItems: 'center',
+    marginBottom: 40,
+    width: '100%',
+  },
+  logoContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   heading: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginTop: 8,
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1E293B',
+    textAlign: 'center',
+    marginBottom: 12,
+    letterSpacing: -0.5,
   },
   sub: {
-    color: '#687076',
-    marginTop: 8,
-    lineHeight: 20,
+    fontSize: 16,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 24,
+    paddingHorizontal: 20,
+    fontWeight: '400',
+  },
+  formSection: {
+    width: '100%',
+    maxWidth: 400,
   },
   fieldGroup: {
-    marginTop: 18,
+    marginTop: 20,
   },
   label: {
-    color: '#687076',
+    color: '#374151',
     marginBottom: 8,
+    fontSize: 15,
+    fontWeight: '500',
   },
   inputWrap: {
     borderWidth: 1,
-    borderColor: '#E6E8EB',
-    borderRadius: 10,
-    height: 48,
-    paddingHorizontal: 14,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    height: 52,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   inputWrapActive: {
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: GOLD,
-    borderRadius: 10,
-    height: 48,
-    paddingHorizontal: 14,
+    borderRadius: 12,
+    height: 52,
+    paddingHorizontal: 16,
     justifyContent: 'center',
     backgroundColor: '#fff',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   inputInvalid: {
     borderColor: '#FCA5A5',
@@ -271,7 +367,8 @@ const styles = StyleSheet.create({
   },
   input: {
     fontSize: 16,
-    color: Colors.light.text,
+    color: '#1E293B',
+    flex: 1,
   },
   eyeBtn: {
     paddingLeft: 8,
@@ -310,22 +407,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   primaryBtn: {
-    height: 50,
-    borderRadius: 10,
+    height: 54,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 18,
+    marginTop: 24,
     backgroundColor: GOLD,
     shadowColor: GOLD,
     shadowOpacity: 0.35,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
+    elevation: 6,
   },
   primaryText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 17,
   },
   orWrap: {
     marginTop: 18,
@@ -350,19 +447,25 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   socialBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     borderWidth: 1,
-    borderColor: '#E6E8EB',
+    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   footerRow: {
-    marginTop: 16,
+    marginTop: 24,
     flexDirection: 'row',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   footerText: {
     color: '#687076',

@@ -49,10 +49,19 @@ export async function request<T>(
     if (token) headers.Authorization = `Bearer ${token}`;
   }
 
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+
+  // If sending FormData, let fetch set the correct Content-Type with boundary
+  if (isFormData) {
+    delete headers['Content-Type'];
+  }
+
   const res = await fetch(url, {
     method: options.method || 'GET',
     headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    body: options.body
+      ? (isFormData ? (options.body as FormData) : JSON.stringify(options.body))
+      : undefined,
   });
 
   const text = await res.text();

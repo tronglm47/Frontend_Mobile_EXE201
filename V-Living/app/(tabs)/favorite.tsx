@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Platform, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -16,7 +16,11 @@ export default function FavoriteTab() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}><Text style={styles.title}>Yêu Thích</Text></View>
+      <View style={styles.header}>
+        <View style={{ width: 36 }} />
+        <Text style={styles.title}>Yêu Thích</Text>
+        <View style={{ width: 36 }} />
+      </View>
       <FlatList
         data={items}
         keyExtractor={(i) => i.id}
@@ -48,8 +52,18 @@ export default function FavoriteTab() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
-  header: { height: 56, alignItems: 'center', justifyContent: 'center' },
-  title: { fontWeight: '700', fontSize: 18, color: '#111827' },
+  header: { 
+    height: 56, 
+    flexDirection: 'row',
+    alignItems: 'center', 
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+    marginTop: 0,
+    backgroundColor: '#fff',
+  },
+  title: { fontWeight: '800', fontSize: 18, color: '#111827' },
   item: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 12, padding: 8, elevation: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6 },
   img: { width: 84, height: 84, borderRadius: 10 },
   itemTitle: { fontSize: 14, fontWeight: '700' },

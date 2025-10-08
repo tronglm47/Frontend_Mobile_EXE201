@@ -69,6 +69,39 @@ export async function createLandlordPost(body: LandlordPostBody): Promise<PostRe
   return await api.post<PostResponse>('Post/landlord', body, true);
 }
 
+// Multipart version to support images upload
+export async function createLandlordPostWithImages(params: LandlordPostBody & {
+  images?: { uri: string; name: string; type: string }[];
+  primaryImageIndex?: number;
+}): Promise<PostResponse> {
+  const form = new FormData();
+  form.append('title', params.title);
+  form.append('description', params.description);
+  form.append('price', String(params.price));
+  form.append('status', params.status);
+  params.utilityIds?.forEach((id) => form.append('utilityIds', String(id)));
+
+  form.append('apartment.buildingId', String(params.apartment.buildingId));
+  form.append('apartment.apartmentCode', params.apartment.apartmentCode);
+  form.append('apartment.floor', String(params.apartment.floor || 0));
+  form.append('apartment.area', String(params.apartment.area || 0));
+  form.append('apartment.apartmentType', params.apartment.apartmentType);
+  form.append('apartment.status', params.apartment.status);
+  form.append('apartment.numberOfBedrooms', String(params.apartment.numberOfBedrooms || 0));
+
+  if (params.images && params.images.length > 0) {
+    params.images.forEach((file) => {
+      // @ts-ignore React Native FormData file
+      form.append('images', file);
+    });
+    if (typeof params.primaryImageIndex === 'number') {
+      form.append('primaryImageIndex', String(params.primaryImageIndex));
+    }
+  }
+
+  return await api.post<PostResponse>('Post/landlord', form, true);
+}
+
 export async function createUserPost(body: UserPostBody): Promise<PostResponse> {
   return await api.post<PostResponse>('Post/user', body, true);
 }
