@@ -152,21 +152,60 @@ export async function createUserPost(body: UserPostBody): Promise<PostResponse> 
   return await api.post<PostResponse>('Post/user', body, true);
 }
 
+// Fetch landlord posts with pagination, sorted by newest first
+export async function fetchLandlordPostsPage(page = 1, pageSize = 5): Promise<{
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  items: LandlordPostItem[];
+}> {
+  const res = await api.get<{
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    items: LandlordPostItem[];
+  }>(`Post/landlord?page=${page}&pageSize=${pageSize}&sortBy=createdAt&sortOrder=desc`);
+  
+  // Additional client-side sorting to ensure newest posts are first
+  if (res?.items) {
+    res.items.sort((a, b) => {
+      // Sort by createdAt if available, otherwise by postId
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      
+      if (dateA !== dateB) {
+        return dateB - dateA; // Newest first
+      }
+      
+      // If dates are same or missing, sort by postId (higher ID = newer)
+      return b.postId - a.postId;
+    });
+  }
+  
+  return res;
+}
+
 // Fetch all landlord posts across pages, sorted latest first
 export async function fetchAllLandlordPosts(): Promise<LandlordPostItem[]> {
-  const first = await api.get<{ currentPage: number; totalPages: number; totalItems: number; items: LandlordPostItem[] }>('Post/landlord');
+  const first = await api.get<{ currentPage: number; totalPages: number; totalItems: number; items: LandlordPostItem[] }>('Post/landlord?sortBy=createdAt&sortOrder=desc');
   const items: LandlordPostItem[] = [...(first.items || [])];
   const totalPages = first.totalPages || 1;
   for (let p = 2; p <= totalPages; p++) {
     try {
-      const res = await api.get<{ items: LandlordPostItem[] }>(`Post/landlord?page=${p}`);
+      const res = await api.get<{ items: LandlordPostItem[] }>(`Post/landlord?page=${p}&sortBy=createdAt&sortOrder=desc`);
       if (res?.items?.length) items.push(...res.items);
     } catch {}
   }
   // Sort by createdAt desc if present, else by postId desc
   return items.sort((a, b) => {
-    const da = a.createdAt ? Date.parse(a.createdAt) : 0;
-    const db = b.createdAt ? Date.parse(b.createdAt) : 0;
-    return db - da || (b.postId - a.postId);
+    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    
+    if (dateA !== dateB) {
+      return dateB - dateA; // Newest first
+    }
+    
+    // If dates are same or missing, sort by postId (higher ID = newer)
+    return b.postId - a.postId;
   });
 }

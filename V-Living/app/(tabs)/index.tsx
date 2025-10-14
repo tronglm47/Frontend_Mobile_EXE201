@@ -8,8 +8,9 @@ import { FloatingChatbot } from '@/components/chatbot/FloatingChatbot';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchLocations, LocationItem } from '../../apis/locations';
-import { PostItem, fetchAllLandlordPosts, LandlordPostItem, fetchBuildings, Building, fetchAllBuildings } from '../../apis/posts';
+import { fetchAllLandlordPosts, LandlordPostItem, fetchBuildings, Building, fetchAllBuildings, fetchLandlordPostsPage } from '../../apis/posts';
 import { useFavorites } from '../favorites-context';
+import { useRecentViewed } from '../recent-viewed-context';
 import { LISTINGS } from '../listings';
 import { useLocation } from '../location-context';
 import NotificationsScreen from '../notifications';
@@ -19,15 +20,26 @@ const IMG = (seed: string, w = 600, h = 400) =>
 
 export default function HomeTab() {
   const { isFav, toggle } = useFavorites();
+  const { addToRecentViewed } = useRecentViewed();
   const { selectedLocation } = useLocation();
-  const [posts, setPosts] = React.useState<PostItem[] | null>(null);
-  const [loadingPosts, setLoadingPosts] = React.useState(false);
   const [locations, setLocations] = React.useState<Record<number, LocationItem>>({});
   const [showNotifications, setShowNotifications] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
   const [refreshKey, setRefreshKey] = React.useState(0);
 
-  const goDetail = React.useCallback((id?: string) => router.push({ pathname: '/detail', params: id ? { id } : undefined } as any), []);
+  const goDetail = React.useCallback((post?: LandlordPostItem | string) => {
+    if (typeof post === 'object' && post) {
+      // If it's a LandlordPostItem, add to recent viewed and navigate
+      addToRecentViewed(post);
+      router.push({ pathname: '/detail', params: { id: String(post.postId) } } as any);
+    } else if (typeof post === 'string') {
+      // If it's just an ID string, navigate directly (for backward compatibility)
+      router.push({ pathname: '/detail', params: { id: post } } as any);
+    } else {
+      // If no params, navigate without ID
+      router.push({ pathname: '/detail' } as any);
+    }
+  }, [addToRecentViewed]);
 
   const openFilter = React.useCallback(() => {
     Alert.alert('Bộ lọc', 'Tính năng bộ lọc sẽ được bổ sung sau.');
@@ -37,7 +49,6 @@ export default function HomeTab() {
     let isMounted = true;
     (async () => {
       try {
-        setLoadingPosts(true);
         const locs = await fetchLocations();
         if (isMounted) {
           const map: Record<number, LocationItem> = {};
@@ -46,8 +57,6 @@ export default function HomeTab() {
         }
       } catch (e) {
         console.warn('Failed to load locations:', e);
-      } finally {
-        if (isMounted) setLoadingPosts(false);
       }
     })();
     return () => { isMounted = false; };
@@ -81,15 +90,7 @@ export default function HomeTab() {
 
       <TrendingSection goDetail={goDetail} isFav={isFav} toggleFav={toggle} refreshKey={refreshKey} />
 
-      <Section title="Gần Nhất">
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.nearScrollContent}>
-          <View style={styles.nearGrid}>
-            {LISTINGS.slice(0, 4).map((l) => (
-              <NearCard key={l.id} onPress={() => goDetail(l.id)} seed={l.seed} title={l.title} price={l.price} rating={l.rating} />
-            ))}
-          </View>
-        </ScrollView>
-      </Section>
+      <RecentSection goDetail={goDetail} isFav={isFav} toggleFav={toggle} locations={locations} />
 
       <Section title="Căn Hộ Hạng Đầu">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowGap8}>
@@ -99,36 +100,7 @@ export default function HomeTab() {
         </ScrollView>
       </Section>
 
-      <Section title="Phổ Biến Dành Cho Bạn" onViewAll={() => router.push({ pathname: '/popular' } as any)}>
-        <View style={{ gap: 12 }}>
-          {(posts && posts.length > 0 ? posts : LISTINGS).map((item: any) => {
-            const id = String(item.postId || item.id);
-            const title = item.title || item.title;
-            const locName = item.locationId ? locations[item.locationId]?.name : undefined;
-            const subTitle = locName || item.area || 'Bất động sản';
-            const priceVal: number | undefined = typeof item.price === 'number' ? item.price : undefined;
-            const price = priceVal ?
-              new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(priceVal)
-              : (item.price || 'Liên hệ');
-            const seed = item.seed || id;
-            const rating = item.rating || 4.5;
-            return (
-              <ListItem
-                key={id}
-                id={id}
-                seed={seed}
-                title={title}
-                subTitle={subTitle}
-                price={price}
-                rating={rating}
-                isFav={isFav(id)}
-                onToggleFav={() => toggle(id)}
-                onPress={() => goDetail(id)}
-              />
-            );
-          })}
-        </View>
-      </Section>
+      <PopularSection goDetail={goDetail} isFav={isFav} toggleFav={toggle} locations={locations} />
     </ScrollView>
     <FloatingChatbot />
     {/* Notifications Modal */}
@@ -227,6 +199,7 @@ function TrendCard({ images, title, price, badge, onPress, isFav, onToggleFav }:
     const t = setInterval(() => setIdx((i) => (i + 1) % images.length), 3000);
     return () => clearInterval(t);
   }, [images]);
+  
   return (
     <TouchableOpacity activeOpacity={0.9} style={styles.trendCard} onPress={onPress}>
       <Image source={{ uri: images?.[idx] || IMG('fallback', 380, 240) }} style={styles.trendImg} contentFit="cover" />
@@ -249,7 +222,7 @@ function TrendCard({ images, title, price, badge, onPress, isFav, onToggleFav }:
   );
 }
 
-function TrendingSection({ goDetail, isFav, toggleFav, refreshKey }: { goDetail: (id?: string) => void; isFav: (id: string) => boolean; toggleFav: (id: string) => void; refreshKey: number }) {
+function TrendingSection({ goDetail, isFav, toggleFav, refreshKey }: { goDetail: (post: LandlordPostItem | string) => void; isFav: (id: string) => boolean; toggleFav: (id: string) => void; refreshKey: number }) {
   const [latest, setLatest] = React.useState<LandlordPostItem[] | null>(null);
   React.useEffect(() => {
     let mounted = true;
@@ -283,7 +256,15 @@ function TrendingSection({ goDetail, isFav, toggleFav, refreshKey }: { goDetail:
       <Section title="Xu Hướng">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowGap16}>
           {[LISTINGS[0], LISTINGS[1], LISTINGS[2]].map((l) => (
-            <TrendCard key={l.id} onPress={() => goDetail(l.id)} seed={l.seed} title={l.title} price={l.price} />
+            <TrendCard 
+              key={l.id} 
+              onPress={() => goDetail(l.id)} 
+              images={[IMG(l.seed, 380, 240)]} 
+              title={l.title} 
+              price={l.price} 
+              isFav={isFav(l.id)}
+              onToggleFav={() => toggleFav(l.id)}
+            />
           ))}
         </ScrollView>
       </Section>
@@ -293,7 +274,7 @@ function TrendingSection({ goDetail, isFav, toggleFav, refreshKey }: { goDetail:
   return (
     <Section title="Xu Hướng">
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowGap16}>
-        {latest.map((p: any) => {
+          {latest.map((p: any) => {
           const imgs = (p.images && p.images.length ? p.images.map((im: any) => im.imageUrl) : []).filter(Boolean);
           if (!imgs.length && p.primaryImageUrl) imgs.push(p.primaryImageUrl);
           if (!imgs.length && p.imageUrl) imgs.push(p.imageUrl);
@@ -301,7 +282,7 @@ function TrendingSection({ goDetail, isFav, toggleFav, refreshKey }: { goDetail:
           return (
           <TrendCard
             key={p.postId}
-            onPress={() => goDetail(id)}
+            onPress={() => goDetail(p)}
             images={imgs}
             title={p.title}
             price={fmt(p.price)}
@@ -389,6 +370,226 @@ function ListItem({ id, seed, title, subTitle, price, rating, isFav, onToggleFav
   
 }
 
+function PopularListItem({ post, isFav, onToggleFav, onPress, locations }: { 
+  post: LandlordPostItem; 
+  isFav: (id: string) => boolean; 
+  onToggleFav: (id: string) => void; 
+  onPress: () => void;
+  locations: Record<number, LocationItem>;
+}) {
+  const id = String(post.postId);
+  const title = post.title || 'Bất động sản';
+  const locName = post.apartment?.buildingId ? locations[post.apartment.buildingId]?.name : undefined;
+  const subTitle = locName || 'Bất động sản';
+  const priceVal: number | undefined = typeof post.price === 'number' ? post.price : undefined;
+  const price = priceVal ?
+    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(priceVal)
+    : 'Liên hệ';
+  
+  // Get the first/latest image from the post
+  const getImageUrl = () => {
+    if (post.primaryImageUrl) return post.primaryImageUrl;
+    if (post.imageUrl) return post.imageUrl;
+    if (post.images && post.images.length > 0) {
+      return post.images[0].imageUrl;
+    }
+    return IMG(String(post.postId), 240, 180);
+  };
+
+  return (
+    <TouchableOpacity style={styles.listItem} activeOpacity={0.9} onPress={onPress}>
+      <Image source={{ uri: getImageUrl() }} style={styles.listImg} contentFit="cover" />
+      <View style={{ flex: 1, paddingVertical: 4, gap: 6 }}>
+        <Text style={styles.listTitle} numberOfLines={1}>{title}</Text>
+        <View style={styles.rowBetween}>
+          <Text style={styles.listSub} numberOfLines={1}>{subTitle}</Text>
+          <View style={styles.ratingBadge}><MaterialIcons name="star" size={14} color={'#fff'} /><Text style={styles.ratingBadgeText}> 4.5</Text></View>
+        </View>
+        <Text style={styles.listPrice}>{price}</Text>
+      </View>
+      <TouchableOpacity style={styles.heartBtn} onPress={(e) => { e.stopPropagation?.(); onToggleFav(id); }}>
+        <MaterialIcons name={isFav(id) ? 'favorite' : 'favorite-border'} size={18} color={isFav(id) ? '#E91E63' : Colors.light.text} />
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+}
+
+function RecentSection({ goDetail, isFav, toggleFav, locations }: { 
+  goDetail: (post: LandlordPostItem | string) => void; 
+  isFav: (id: string) => boolean; 
+  toggleFav: (id: string) => void;
+  locations: Record<number, LocationItem>;
+}) {
+  const { recentViewed } = useRecentViewed();
+
+  if (recentViewed.length === 0) {
+    return (
+      <Section title="Gần Nhất">
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={{ color: '#9BA1A6', fontSize: 14 }}>Chưa có bài viết nào được xem gần đây</Text>
+        </View>
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="Gần Nhất">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.nearScrollContent}>
+        <View style={styles.nearGrid}>
+          {recentViewed.slice(0, 4).map((post) => (
+            <RecentCard 
+              key={post.postId} 
+              post={post}
+              onPress={() => goDetail(post)} 
+              locations={locations}
+              isFav={isFav}
+              onToggleFav={toggleFav}
+            />
+          ))}
+        </View>
+      </ScrollView>
+    </Section>
+  );
+}
+
+function RecentCard({ post, onPress, locations, isFav, onToggleFav }: { 
+  post: LandlordPostItem; 
+  onPress: () => void;
+  locations: Record<number, LocationItem>;
+  isFav: (id: string) => boolean;
+  onToggleFav: (id: string) => void;
+}) {
+  const id = String(post.postId);
+  const title = post.title || 'Bất động sản';
+  const locName = post.apartment?.buildingId ? locations[post.apartment.buildingId]?.name : undefined;
+  const subTitle = locName || 'Bất động sản';
+  const priceVal: number | undefined = typeof post.price === 'number' ? post.price : undefined;
+  const price = priceVal ?
+    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(priceVal)
+    : 'Liên hệ';
+  
+  // Get the first/latest image from the post
+  const getImageUrl = () => {
+    if (post.primaryImageUrl) return post.primaryImageUrl;
+    if (post.imageUrl) return post.imageUrl;
+    if (post.images && post.images.length > 0) {
+      return post.images[0].imageUrl;
+    }
+    return IMG(String(post.postId), 240, 180);
+  };
+
+  return (
+    <TouchableOpacity style={styles.nearCard} activeOpacity={0.9} onPress={onPress}>
+      <Image source={{ uri: getImageUrl() }} style={styles.nearCardImg} contentFit="cover" />
+      <View style={styles.nearCardContent}>
+        <Text style={styles.nearCardTitle} numberOfLines={1}>{title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <MaterialIcons name="location-on" size={12} color="#9BA1A6" />
+          <Text style={styles.nearCardSub}>{subTitle}</Text>
+        </View>
+        <View style={styles.rowBetween}>
+          <Text style={styles.nearCardPrice}>{price}</Text>
+          <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); onToggleFav(id); }}>
+            <MaterialIcons 
+              name={isFav(id) ? 'favorite' : 'favorite-border'} 
+              size={14} 
+              color={isFav(id) ? '#E91E63' : '#9BA1A6'} 
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function PopularSection({ goDetail, isFav, toggleFav, locations }: { 
+  goDetail: (post: LandlordPostItem | string) => void; 
+  isFav: (id: string) => boolean; 
+  toggleFav: (id: string) => void;
+  locations: Record<number, LocationItem>;
+}) {
+  const [posts, setPosts] = React.useState<LandlordPostItem[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const [hasMore, setHasMore] = React.useState(true);
+
+  const loadPosts = React.useCallback(async (page = 1, append = false) => {
+    if (page === 1) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
+    
+    try {
+      const response = await fetchLandlordPostsPage(page, 5);
+      if (append) {
+        setPosts(prev => [...prev, ...response.items]);
+      } else {
+        setPosts(response.items);
+      }
+      setCurrentPage(response.currentPage);
+      setHasMore(response.currentPage < response.totalPages);
+    } catch (e) {
+      console.warn('Failed to load popular posts:', e);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadPosts(1, false);
+  }, [loadPosts]);
+
+  const handleLoadMore = React.useCallback(() => {
+    if (!loadingMore && hasMore) {
+      loadPosts(currentPage + 1, true);
+    }
+  }, [loadPosts, currentPage, loadingMore, hasMore]);
+
+  if (loading && posts.length === 0) {
+    return (
+      <Section title="Phổ Biến Dành Cho Bạn">
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={{ color: '#9BA1A6' }}>Đang tải...</Text>
+        </View>
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="Phổ Biến Dành Cho Bạn" onViewAll={() => router.push({ pathname: '/popular' } as any)}>
+      <View style={{ gap: 12 }}>
+        {posts.map((post) => (
+          <PopularListItem
+            key={post.postId}
+            post={post}
+            isFav={isFav}
+            onToggleFav={toggleFav}
+            onPress={() => goDetail(post)}
+            locations={locations}
+          />
+        ))}
+        
+        {hasMore && (
+          <TouchableOpacity 
+            style={styles.loadMoreBtn} 
+            onPress={handleLoadMore}
+            disabled={loadingMore}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.loadMoreText}>
+              {loadingMore ? 'Đang tải...' : 'Xem thêm'}
+            </Text>
+            {loadingMore && <MaterialIcons name="refresh" size={16} color="#5E49FF" />}
+          </TouchableOpacity>
+        )}
+      </View>
+    </Section>
+  );
+}
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 16 },
@@ -455,4 +656,19 @@ const styles = StyleSheet.create({
   listSub: { color: '#9BA1A6', fontSize: 12 },
   listPrice: { fontSize: 12, fontWeight: '700' as const },
   heartBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F2F3F5', alignItems: 'center', justifyContent: 'center' },
+  loadMoreBtn: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    gap: 8, 
+    padding: 12, 
+    backgroundColor: '#F2F3F5', 
+    borderRadius: 12,
+    marginTop: 8
+  },
+  loadMoreText: { 
+    color: '#5E49FF', 
+    fontSize: 14, 
+    fontWeight: '600' as const 
+  },
 })
