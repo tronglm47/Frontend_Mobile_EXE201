@@ -2,13 +2,15 @@ import { Colors, Fonts } from '@/constants/theme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import React from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, RefreshControl } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, RefreshControl, ActivityIndicator } from 'react-native';
 // Alert imported above
 import { FloatingChatbot } from '@/components/chatbot/FloatingChatbot';
+import { LoadingScreen } from '@/components/loading-screen';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchLocations, LocationItem } from '../../apis/locations';
 import { fetchAllLandlordPosts, LandlordPostItem, fetchBuildings, Building, fetchAllBuildings, fetchLandlordPostsPage } from '../../apis/posts';
+import { setPostsInCache, prefetchImages } from '../../lib/post-cache';
 import { useFavorites } from '../favorites-context';
 import { useRecentViewed } from '../recent-viewed-context';
 import { LISTINGS } from '../listings';
@@ -16,7 +18,7 @@ import { useLocation } from '../location-context';
 import NotificationsScreen from '../notifications';
 
 const IMG = (seed: string, w = 600, h = 400) =>
-  `https://picsum.photos/seed/${seed}/${w}/${h}`;
+  `https://picsum.photos/seed/${seed}/${w}/${h}`; // legacy; avoid using for Trending
 
 export default function HomeTab() {
   const { isFav, toggle } = useFavorites();
@@ -77,6 +79,46 @@ export default function HomeTab() {
     }
   }, []);
 
+  const [homeReady, setHomeReady] = React.useState(false);
+  const [preTrending, setPreTrending] = React.useState<LandlordPostItem[] | null>(null);
+  const [prePopular, setPrePopular] = React.useState<LandlordPostItem[] | null>(null);
+  const [preBuildingsMap, setPreBuildingsMap] = React.useState<Record<number, string>>({});
+
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        // Warm up: load first page of popular and trending posts and prefetch images
+        const [allTrending, popularPage, buildings] = await Promise.all([
+          fetchAllLandlordPosts(),
+          fetchLandlordPostsPage(1, 5),
+          fetchAllBuildings(),
+        ]);
+        const popular = popularPage.items || [];
+        // Cache posts
+        setPostsInCache(allTrending);
+        setPostsInCache(popular);
+        setPreTrending(allTrending);
+        setPrePopular(popular);
+        const idToBadge: Record<number, string> = {};
+        buildings.forEach((b: Building) => { if (b.buildingId) idToBadge[b.buildingId] = [b.subdivisionName, b.name, (b as any).buildingName].filter(Boolean)[0]; });
+        setPreBuildingsMap(idToBadge);
+        // Prefetch images for quick render
+        const imageUrls: string[] = [];
+        [...allTrending, ...popular].forEach((p: any) => {
+          if (p?.images?.length) imageUrls.push(...p.images.map((im: any) => im.imageUrl));
+          if (p?.primaryImageUrl) imageUrls.push(p.primaryImageUrl);
+          if (p?.imageUrl) imageUrls.push(p.imageUrl);
+        });
+        await prefetchImages(imageUrls);
+      } catch {}
+      finally {
+        if (mounted) setHomeReady(true);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 24 }}
@@ -88,7 +130,7 @@ export default function HomeTab() {
 
       <PromoBanner />
 
-      <TrendingSection goDetail={goDetail} isFav={isFav} toggleFav={toggle} refreshKey={refreshKey} />
+      <TrendingSection goDetail={goDetail} isFav={isFav} toggleFav={toggle} refreshKey={refreshKey} initialPosts={preTrending || undefined} buildingsMap={preBuildingsMap} />
 
       <RecentSection goDetail={goDetail} isFav={isFav} toggleFav={toggle} locations={locations} />
 
@@ -100,8 +142,13 @@ export default function HomeTab() {
         </ScrollView>
       </Section>
 
-      <PopularSection goDetail={goDetail} isFav={isFav} toggleFav={toggle} locations={locations} />
+      <PopularSection goDetail={goDetail} isFav={isFav} toggleFav={toggle} locations={locations} initialPosts={prePopular || undefined} />
     </ScrollView>
+    {!homeReady && (
+      <View style={{ position: 'absolute', left:0, right:0, top:0, bottom:0 }}>
+        <LoadingScreen />
+      </View>
+    )}
     <FloatingChatbot />
     {/* Notifications Modal */}
     <Modal
@@ -202,7 +249,11 @@ function TrendCard({ images, title, price, badge, onPress, isFav, onToggleFav }:
   
   return (
     <TouchableOpacity activeOpacity={0.9} style={styles.trendCard} onPress={onPress}>
-      <Image source={{ uri: images?.[idx] || IMG('fallback', 380, 240) }} style={styles.trendImg} contentFit="cover" />
+      {images?.[idx] ? (
+        <Image source={{ uri: images[idx] }} style={styles.trendImg} contentFit="cover" />
+      ) : (
+        <View style={[styles.trendImg, { backgroundColor: '#F2F3F5' }]} />
+      )}
       <View style={styles.trendOverlay}>
         <View style={styles.priceBadge}>
           <Text style={styles.priceBadgeText}>{price}</Text>
@@ -222,17 +273,18 @@ function TrendCard({ images, title, price, badge, onPress, isFav, onToggleFav }:
   );
 }
 
-function TrendingSection({ goDetail, isFav, toggleFav, refreshKey }: { goDetail: (post: LandlordPostItem | string) => void; isFav: (id: string) => boolean; toggleFav: (id: string) => void; refreshKey: number }) {
-  const [latest, setLatest] = React.useState<LandlordPostItem[] | null>(null);
+function TrendingSection({ goDetail, isFav, toggleFav, refreshKey, initialPosts, buildingsMap }: { goDetail: (post: LandlordPostItem | string) => void; isFav: (id: string) => boolean; toggleFav: (id: string) => void; refreshKey: number; initialPosts?: LandlordPostItem[]; buildingsMap: Record<number, string> }) {
+  const [latest, setLatest] = React.useState<LandlordPostItem[] | null>(initialPosts ? initialPosts.slice(0, 3) : null);
   React.useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         const [posts, buildings] = await Promise.all([fetchAllLandlordPosts(), fetchAllBuildings()]);
         if (!mounted) return;
+        setPostsInCache(posts);
         // map buildingId -> subdivisionName/name
-        const idToBadge: Record<number, string> = {};
-        buildings.forEach((b: Building) => { if (b.buildingId) idToBadge[b.buildingId] = [b.subdivisionName, b.name, (b as any).buildingName].filter(Boolean)[0]; });
+        const idToBadge: Record<number, string> = { ...buildingsMap };
+        buildings.forEach((b: Building) => { if (b.buildingId) idToBadge[b.buildingId] = idToBadge[b.buildingId] || [b.subdivisionName, b.name, (b as any).buildingName].filter(Boolean)[0]; });
         // keep only 3 newest
         setLatest(posts.slice(0, 3).map(p => {
           const bid = p.apartment?.buildingId || (p as any).buildingId || 0;
@@ -252,23 +304,8 @@ function TrendingSection({ goDetail, isFav, toggleFav, refreshKey }: { goDetail:
     : 'Liên hệ';
 
   if (!latest || latest.length === 0) {
-    return (
-      <Section title="Xu Hướng">
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowGap16}>
-          {[LISTINGS[0], LISTINGS[1], LISTINGS[2]].map((l) => (
-            <TrendCard 
-              key={l.id} 
-              onPress={() => goDetail(l.id)} 
-              images={[IMG(l.seed, 380, 240)]} 
-              title={l.title} 
-              price={l.price} 
-              isFav={isFav(l.id)}
-              onToggleFav={() => toggleFav(l.id)}
-            />
-          ))}
-        </ScrollView>
-      </Section>
-    );
+    // Do not render placeholders; loading screen covers initial load
+    return null;
   }
 
   return (
@@ -502,13 +539,14 @@ function RecentCard({ post, onPress, locations, isFav, onToggleFav }: {
   );
 }
 
-function PopularSection({ goDetail, isFav, toggleFav, locations }: { 
+function PopularSection({ goDetail, isFav, toggleFav, locations, initialPosts }: { 
   goDetail: (post: LandlordPostItem | string) => void; 
   isFav: (id: string) => boolean; 
   toggleFav: (id: string) => void;
   locations: Record<number, LocationItem>;
+  initialPosts?: LandlordPostItem[];
 }) {
-  const [posts, setPosts] = React.useState<LandlordPostItem[]>([]);
+  const [posts, setPosts] = React.useState<LandlordPostItem[]>(initialPosts || []);
   const [loading, setLoading] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [currentPage, setCurrentPage] = React.useState(1);
@@ -523,6 +561,7 @@ function PopularSection({ goDetail, isFav, toggleFav, locations }: {
     
     try {
       const response = await fetchLandlordPostsPage(page, 5);
+      setPostsInCache(response.items);
       if (append) {
         setPosts(prev => [...prev, ...response.items]);
       } else {
@@ -552,7 +591,7 @@ function PopularSection({ goDetail, isFav, toggleFav, locations }: {
     return (
       <Section title="Phổ Biến Dành Cho Bạn">
         <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={{ color: '#9BA1A6' }}>Đang tải...</Text>
+          <ActivityIndicator size="small" color="#E0B100" />
         </View>
       </Section>
     );
@@ -579,10 +618,11 @@ function PopularSection({ goDetail, isFav, toggleFav, locations }: {
             disabled={loadingMore}
             activeOpacity={0.8}
           >
-            <Text style={styles.loadMoreText}>
-              {loadingMore ? 'Đang tải...' : 'Xem thêm'}
-            </Text>
-            {loadingMore && <MaterialIcons name="refresh" size={16} color="#5E49FF" />}
+            {loadingMore ? (
+              <ActivityIndicator size="small" color="#5E49FF" />
+            ) : (
+              <Text style={styles.loadMoreText}>Xem thêm</Text>
+            )}
           </TouchableOpacity>
         )}
       </View>

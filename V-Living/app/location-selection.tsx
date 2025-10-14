@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -66,7 +67,7 @@ export default function LocationSelection() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
           <Text style={styles.skipText}>Skip</Text>
@@ -74,47 +75,13 @@ export default function LocationSelection() {
       </View>
 
       <View style={styles.content}>
-        {/* Illustration */}
+        {/* Illustration (replace frame with provided artwork) */}
         <View style={styles.illustrationContainer}>
-          {/* Map with magnifying glass overlay */}
-          <View style={styles.mapContainer}>
-            <View style={styles.map}>
-              {/* Map pins */}
-              <View style={[styles.mapPin, { top: 60, left: 80 }]} />
-              <View style={[styles.mapPin, { top: 120, right: 60 }]} />
-              <View style={[styles.mapPin, { bottom: 80, left: 100 }]} />
-              <View style={[styles.mapPin, { bottom: 120, right: 80 }]} />
-              
-              {/* Magnifying glass */}
-              <View style={styles.magnifyingGlass}>
-                <View style={styles.magnifyingGlassLens}>
-                  <MaterialIcons name="home" size={24} color="#FFD700" />
-                </View>
-                <View style={styles.magnifyingGlassHandle} />
-              </View>
-              
-              {/* Speech bubbles */}
-              <View style={styles.speechBubble1}>
-                <View style={styles.speechBubbleContent}>
-                  <MaterialIcons name="check" size={16} color="#fff" />
-                </View>
-              </View>
-              
-              <View style={styles.speechBubble2}>
-                <View style={styles.speechBubbleDot} />
-              </View>
-            </View>
-            
-            {/* Clouds */}
-            <View style={[styles.cloud, { top: 40, left: 20 }]} />
-            <View style={[styles.cloud, { top: 20, right: 40 }]} />
-            <View style={[styles.cloud, { bottom: 60, right: 20 }]} />
-            
-            {/* Plant */}
-            <View style={styles.plant}>
-              <MaterialIcons name="local-florist" size={32} color="#8B4513" />
-            </View>
-          </View>
+          <Image 
+            source={require('../assets/images/location/location.png')} 
+            style={{ width: '100%', height: '100%' }} 
+            contentFit="contain" 
+          />
         </View>
 
         {/* Text Content */}
@@ -157,7 +124,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: 20,
     alignItems: 'flex-end',
   },
   skipButton: {
@@ -178,134 +145,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   illustrationContainer: {
-    width: 280,
-    height: 280,
-    position: 'relative',
+    width: 300,
+    height: 220,
     marginBottom: 50,
-  },
-  mapContainer: {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
-  },
-  map: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#E8E8E8',
-    borderRadius: 16,
-    position: 'relative',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  mapPin: {
-    width: 10,
-    height: 10,
-    backgroundColor: '#FFD700',
-    borderRadius: 5,
-    position: 'absolute',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  magnifyingGlass: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: [{ translateX: -25 }, { translateY: -25 }],
-  },
-  magnifyingGlassLens: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#FF8C00',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  magnifyingGlassHandle: {
-    width: 16,
-    height: 16,
-    backgroundColor: '#FF8C00',
-    position: 'absolute',
-    bottom: -8,
-    right: -8,
-    borderRadius: 8,
-    transform: [{ rotate: '45deg' }],
-  },
-  speechBubble1: {
-    position: 'absolute',
-    top: 35,
-    left: 35,
-    width: 35,
-    height: 25,
-    backgroundColor: '#FFD700',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  speechBubbleContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  speechBubble2: {
-    position: 'absolute',
-    top: 70,
-    left: 55,
-    width: 18,
-    height: 18,
-    backgroundColor: '#fff',
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  speechBubbleDot: {
-    width: 6,
-    height: 6,
-    backgroundColor: '#FF8C00',
-    borderRadius: 3,
-  },
-  cloud: {
-    width: 25,
-    height: 16,
-    backgroundColor: '#E6E6FA',
-    borderRadius: 12,
-    position: 'absolute',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  plant: {
-    position: 'absolute',
-    bottom: 15,
-    right: 25,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 2,
   },
   textContainer: {
     alignItems: 'center',

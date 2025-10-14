@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -19,29 +19,70 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFavorites } from './favorites-context';
-import { getListingById } from './listings';
+import { fetchLandlordPostById, LandlordPostItem } from '../apis/posts';
+import { getPostFromCache, setPostInCache } from '../lib/post-cache';
+import BookingModal from '../components/BookingModal';
 
 const GOLD = '#E0B100';
 const GRAY = '#6B7280';
 const BG = '#F7F7F8';
 const { width } = Dimensions.get('window');
 
-const IMG = (seed: string, w = 800, h = 600) => ({ uri: `https://picsum.photos/seed/${seed}/${w}/${h}` });
+const fmtCurrency = (v?: number) => {
+  if (!v || v <= 0) return 'Liên hệ';
+  try {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(v);
+  } catch {
+    return `${v} VND`;
+  }
+};
 
 
 
 export default function DetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
-  const listing = useMemo(() => getListingById(String(params.id || 'l1')), [params.id]);
+  const postId = useMemo(() => (params.id ? String(params.id) : undefined), [params.id]);
   const { isFav, toggle } = useFavorites();
-  const fav = isFav(listing?.id || '');
+  const [post, setPost] = useState<LandlordPostItem | undefined>();
+  const fav = isFav(postId || '');
   const [expanded, setExpanded] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [showBookingModal, setShowBookingModal] = useState(false);
   const scrollX = useRef(new Animated.Value(0)).current;
   const sliderRef = useRef<FlatList>(null);
 
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!postId) {
+        setError('Thiếu mã bài viết');
+        return;
+      }
+      // Try cache first for instant render
+      const cached = getPostFromCache(postId);
+      if (cached) setPost(cached);
+      setLoading(!cached);
+      setError(undefined);
+      try {
+        const data = await fetchLandlordPostById(postId);
+        if (mounted && data) {
+          setPost(data);
+          setPostInCache(data);
+        }
+      } catch (e: any) {
+        if (mounted && !cached) setError(e?.message || 'Không thể tải dữ liệu');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [postId]);
+
   const goContact = () => {
-    Linking.openURL('tel:0900000000').catch(() => Alert.alert('Không thể mở cuộc gọi'));
+    const phoneNumber = post?.phoneNumber || '0900000000';
+    Linking.openURL(`tel:${phoneNumber}`).catch(() => Alert.alert('Không thể mở cuộc gọi'));
   };
 
   const onShare = async () => {
@@ -53,153 +94,217 @@ export default function DetailScreen() {
     } catch {}
   };
 
-  const renderImage = ({ item }: { item: any }) => (
-    <Image source={IMG(listing?.seed + '-' + item, 800, 600)} style={styles.mainImage} />
+  const imageUrls = useMemo(() => {
+    const urls: string[] = [];
+    if (post?.images?.length) urls.push(...post.images.map(i => i.imageUrl).filter(Boolean));
+    if (!urls.length && post?.primaryImageUrl) urls.push(post.primaryImageUrl);
+    if (!urls.length && (post as any)?.imageUrl) urls.push((post as any).imageUrl);
+    return urls;
+  }, [post]);
+
+  const renderImage = ({ item }: { item: string }) => (
+    <Image source={{ uri: item }} style={styles.mainImage} />
   );
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <StatusBar barStyle={Platform.OS === 'ios' ? 'dark-content' : 'default'} />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        {/* Top bar */}
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.roundBtn}>
-            {/* <Ionicons name="chevron-back" size={27} color="#111827" /> */}
-            <Ionicons name="arrow-back-outline" size={27} color="#111827" />
-            
-          </TouchableOpacity>
+      {/* Header */}
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={22} color="#111827" />
+        </TouchableOpacity>
+        <View style={styles.titleContainer}>
           <Text style={styles.topTitle}>Thông tin</Text>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-          <TouchableOpacity onPress={onShare} style={styles.roundBtn}>
-              <Ionicons name="share-social-outline" size={27} color="#111827" />
-            </TouchableOpacity>
-          <TouchableOpacity onPress={() => listing?.id && toggle(listing.id)} style={styles.roundBtn}>
-            <Ionicons name={fav ? 'heart' : 'heart-outline'} size={27} color={fav ? GOLD : '#111827'} />
-            </TouchableOpacity>
-          </View>
         </View>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity onPress={onShare} style={styles.roundBtn}>
+            <Ionicons name="share-social-outline" size={22} color="#111827" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => postId && toggle(postId)} style={styles.roundBtn}>
+            <Ionicons name={fav ? 'heart' : 'heart-outline'} size={22} color={fav ? GOLD : '#111827'} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+
+        {loading && !post && (
+          <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+            <Text>Đang tải...</Text>
+          </View>
+        )}
+
+        {!!error && (
+          <View style={{ paddingVertical: 12 }}>
+            <Text style={{ color: '#DC2626' }}>{error}</Text>
+          </View>
+        )}
 
         {/* Image carousel */}
-        <Animated.FlatList
-          ref={sliderRef}
-          data={[0,1,2,3,4,5]}
-          keyExtractor={(_, i) => String(i)}
-          renderItem={renderImage}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-            { useNativeDriver: true }
-          )}
-          onMomentumScrollEnd={(e) => {
-            const idx = Math.round(e.nativeEvent.contentOffset.x / width);
-            setActiveIdx(idx);
-          }}
-        />
+        <View style={styles.imageCarouselContainer}>
+          <Animated.FlatList
+            ref={sliderRef}
+            data={imageUrls}
+            keyExtractor={(uri, i) => uri || String(i)}
+            renderItem={renderImage}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+              { useNativeDriver: true }
+            )}
+            onMomentumScrollEnd={(e) => {
+              const idx = Math.round(e.nativeEvent.contentOffset.x / width);
+              setActiveIdx(idx);
+            }}
+          />
+        </View>
 
         {/* Thumbnails */}
-        <FlatList
-          horizontal
-          data={IMG(listing?.seed || 'x', 100, 100) ? [0,1,2,3,4,5] : []}
-          keyExtractor={(_, i) => 'thumb-' + i}
-          contentContainerStyle={{  paddingTop: 10, height: 102 }}
-          showsHorizontalScrollIndicator={false}
-          renderItem={({ item, index }) => (
-            <TouchableOpacity
-              onPress={() => sliderRef.current?.scrollToIndex({ index, animated: true })}
-              style={[styles.thumbWrap, activeIdx === index && styles.thumbActive]}
-            >
-              <Image source={item} style={styles.thumbImg} />
-            </TouchableOpacity>
-          )}
-          ItemSeparatorComponent={() => <View style={{ width: 8, backgroundColor: 'transparent' }} />}
-        />
+        <View style={styles.thumbnailsContainer}>
+          <FlatList
+            horizontal
+            data={imageUrls}
+            keyExtractor={(uri, i) => 'thumb-' + (uri || i)}
+            contentContainerStyle={{ paddingTop: 10, height: 102, paddingHorizontal: 20 }}
+            showsHorizontalScrollIndicator={false}
+            renderItem={({ item, index }) => (
+              <TouchableOpacity
+                onPress={() => sliderRef.current?.scrollToIndex({ index, animated: true })}
+                style={[styles.thumbWrap, activeIdx === index && styles.thumbActive]}
+              >
+                <Image source={{ uri: item }} style={styles.thumbImg} />
+              </TouchableOpacity>
+            )}
+            ItemSeparatorComponent={() => <View style={{ width: 8, backgroundColor: 'transparent' }} />}
+          />
+        </View>
 
-        {/* Title & price */}
-        <View style={styles.titleRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.propTitle}>ORIGAMI</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+        {/* Title & location */}
+        <View style={styles.contentContainer}>
+          <Text style={styles.propTitle}>{post?.title || 'Bất động sản'}</Text>
+          <View style={styles.locationPriceRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
               <Ionicons name="location-outline" size={14} color={GRAY} />
-              <Text style={styles.locationText}> Origami</Text>
+              <Text style={styles.locationText}> {post?.apartment?.buildingId ? `Tòa ${post.apartment.buildingId}` : '—'}</Text>
             </View>
+            <Text style={styles.price}>{fmtCurrency(post?.price)}</Text>
           </View>
-          <Text style={styles.price}>3.000.000 VND/month</Text>
+
+        {/* Property Details Section */}
+        <Text style={styles.sectionTitle}>Chi tiết</Text>
+        <View style={styles.grid}>
+          {post?.apartment?.area && (
+            <DetailItem 
+              label="Diện tích" 
+              value={`${post.apartment.area} m²`} 
+              icon="square-outline"
+            />
+          )}
+          {post?.apartment?.numberBathroom && (
+            <DetailItem 
+              label="Phòng tắm" 
+              value={post.apartment.numberBathroom.toString()} 
+              icon="water-outline"
+            />
+          )}
+          {post?.apartment?.apartmentType && (
+            <DetailItem 
+              label="Loại" 
+              value={post.apartment.apartmentType} 
+              icon="home-outline"
+            />
+          )}
+          {post?.apartment?.floor && (
+            <DetailItem 
+              label="Tầng" 
+              value={`Tầng ${post.apartment.floor}`} 
+              icon="layers-outline"
+            />
+          )}
+          {post?.apartment?.buildingId && (
+            <DetailItem 
+              label="Tòa nhà" 
+              value={`Tòa ${post.apartment.buildingId}`} 
+              icon="business-outline"
+            />
+          )}
+          {post?.status && (
+            <DetailItem 
+              label="Trạng thái" 
+              value={post.status === 'available' ? 'Còn trống' : 'Đã thuê'} 
+              icon="checkmark-circle-outline"
+            />
+          )}
         </View>
 
-        {/* Property details grid */}
-        <Text style={styles.sectionTitle}>Property Details</Text>
-        <View style={styles.grid}>
-          <DetailItem label="Bedrooms" value="3" />
-          <DetailItem label="Bathtub" value="2" />
-          <DetailItem label="Area" value="1,880 sqft" />
-          <DetailItem label="Build" value="2020" />
-          <DetailItem label="Parking" value="1 Indoor" />
-          <DetailItem label="Status" value="For Rent" />
-        </View>
 
         {/* Description */}
-        <Text style={styles.sectionTitle}>Description</Text>
-        <Text numberOfLines={expanded ? undefined : 3} style={styles.desc}>
-          Lorem Ipsum is simply dummy text of the printing and typesetting industry. 1500s, when an unknown printer took
-          a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but
-          also the leap into electronic typesetting, remaining essentially unchanged.
-        </Text>
-        <TouchableOpacity onPress={() => setExpanded((e) => !e)}>
-          <Text style={styles.readMore}>{expanded ? 'Read less' : 'Read more'}</Text>
-        </TouchableOpacity>
-
-        {/* Agent */}
-        <Text style={styles.sectionTitle}>Agent</Text>
-        <View style={styles.agentCard}>
-          <Image source={require('../assets/images/icon.png')} style={styles.agentAvatar} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.agentName}>Esther Howard</Text>
-            <Text style={styles.agentRole}>Real Estate Agent</Text>
-          </View>
-          <TouchableOpacity onPress={() => Linking.openURL('tel:0900000000')} style={styles.agentAction}>
-            <Ionicons name="call-outline" size={27} color={GOLD} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => Alert.alert('Chat', 'Tính năng chat đang được phát triển')} style={styles.agentAction}>
-            <Ionicons name="chatbubble-ellipses-outline" size={27} color={GOLD} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Facilities */}
-        <Text style={styles.sectionTitle}>Location & Public Facilities</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 0 }}>
-          {['Hospital', 'Gas stations', 'Mall', 'Mosque'].map((t) => (
-            <View key={t} style={styles.chip}><Text style={styles.chipText}>{t}</Text></View>
-          ))}
-        </ScrollView>
-
-        {/* Map placeholder */}
-        <Image source={require('../assets/images/screenKhoa/detail.png')} style={styles.map} />
-
-        {/* Reviews */}
-        <View style={styles.rowBetween}>
-          <Text style={styles.sectionTitle}>Reviews 152</Text>
-          <TouchableOpacity><Text style={styles.seeAll}>See all</Text></TouchableOpacity>
-        </View>
-        <View style={styles.reviewCard}>
-          <Image source={require('../assets/images/icon.png')} style={styles.reviewAvatar} />
-          <View style={{ flex: 1 }}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.reviewName}>Theresa Webb</Text>
-              <View style={{ flexDirection: 'row' }}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Ionicons key={i} name="star" size={14} color={i < 4 ? GOLD : '#E5E7EB'} />
-                ))}
-              </View>
-            </View>
-            <Text style={styles.reviewText}>
-              Lorem Ipsum is simply dummy text of the printing industry. 1500s, when an unknown printer took...
+        <Text style={styles.sectionTitle}>Mô tả</Text>
+        {!!post?.description && (
+          <>
+            <Text numberOfLines={expanded ? undefined : 3} style={styles.desc}>
+              {post.description}
             </Text>
+            {post.description.length > 150 && (
+              <TouchableOpacity onPress={() => setExpanded((e) => !e)}>
+                <Text style={styles.readMore}>{expanded ? 'Thu gọn' : 'Xem thêm'}</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+        {!post?.description && (
+          <Text style={styles.desc}>Không có mô tả</Text>
+        )}
+
+        {/* Agent Section */}
+        <Text style={styles.sectionTitle}>Chủ nhà</Text>
+        <View style={styles.agentCard}>
+          <View style={styles.agentInfo}>
+            <View style={styles.agentAvatar}>
+              <Ionicons name="person" size={24} color={GRAY} />
+            </View>
+            <View style={styles.agentDetails}>
+              <Text style={styles.agentName}>{post?.userName || 'Chủ bài đăng'}</Text>
+              <Text style={styles.agentRole}>Chủ bất động sản</Text>
+            </View>
+          </View>
+          <View style={styles.agentActions}>
+            <TouchableOpacity style={styles.agentAction} onPress={goContact}>
+              <Ionicons name="call-outline" size={18} color={GOLD} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.agentAction}>
+              <Ionicons name="chatbubble-outline" size={18} color={GOLD} />
+            </TouchableOpacity>
           </View>
         </View>
 
-        <View style={{ height: 100 }} />
+        {/* Map Section */}
+        <Text style={styles.sectionTitle}>Vị trí & Tiện ích công cộng</Text>
+        <View style={styles.mapContainer}>
+          <View style={styles.mapPlaceholder}>
+            <Ionicons name="map-outline" size={48} color={GRAY} />
+            <Text style={styles.mapPlaceholderText}>Bản đồ sẽ được tích hợp sau</Text>
+            <Text style={styles.mapPlaceholderSubtext}>Tính năng định vị khoảng cách</Text>
+          </View>
+        </View>
+
+        {/* Reviews Section */}
+        <View style={styles.reviewsHeader}>
+          <Text style={styles.sectionTitle}>Đánh giá</Text>
+          <TouchableOpacity>
+            <Text style={styles.seeAll}>Xem tất cả</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.reviewsPlaceholder}>
+          <Ionicons name="star-outline" size={24} color={GRAY} />
+          <Text style={styles.reviewsPlaceholderText}>Tính năng đánh giá sẽ được phát triển</Text>
+        </View>
+
+          <View style={{ height: 100 }} />
+        </View>
       </ScrollView>
 
       {/* Floating help */}
@@ -209,52 +314,93 @@ export default function DetailScreen() {
 
       {/* Sticky contact */}
       <SafeAreaView style={styles.bottomBar}>
-        <TouchableOpacity style={styles.contactBtn} onPress={goContact}>
-          <Text style={styles.contactText}>Liên hệ</Text>
+        <TouchableOpacity style={styles.contactBtn} onPress={() => setShowBookingModal(true)}>
+          <Text style={styles.contactText}>Đặt lịch</Text>
         </TouchableOpacity>
       </SafeAreaView>
+
+      {/* Booking Modal */}
+      {post && (
+        <BookingModal
+          visible={showBookingModal}
+          onClose={() => setShowBookingModal(false)}
+          post={post}
+          onSuccess={() => {
+            // Optional: Show success message or navigate
+            console.log('Booking successful!');
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
-function DetailItem({ label, value }: { label: string; value: string }) {
+function DetailItem({ label, value, icon }: { label: string; value: string; icon?: string }) {
   return (
     <View style={styles.gridItem}>
-      <Text style={styles.gridLabel}>{label}</Text>
-      <Text style={styles.gridValue}>{value}</Text>
+      <View style={styles.gridItemContent}>
+        {icon && <Ionicons name={icon as any} size={16} color={GRAY} style={styles.gridIcon} />}
+        <View style={styles.gridTextContainer}>
+          <Text style={styles.gridLabel}>{label}</Text>
+          <Text style={styles.gridValue}>{value}</Text>
+        </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: BG },
-  container: { paddingBottom: 0, marginTop:10, marginHorizontal:20, justifyContent: 'center', },
+  safe: { flex: 1, backgroundColor: '#fff' },
+  container: { paddingBottom: 0 },
+  contentContainer: { marginHorizontal: 20 },
   topBar: {
-    // paddingHorizontal: 12,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
     height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    
-    marginBottom: 8,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
   },
-  topTitle: { fontWeight: '700', fontSize: 19, color: '#111827',textAlign:'center' },
+  titleContainer: { 
+    flex: 1, 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: -1,
+  },
+  topTitle: { fontWeight: '800', color: '#111827', fontSize: 18 },
   roundBtn: {
     width: 36,
     height: 36,
-    backgroundColor: '#F3F4F6',
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageCarouselContainer: {
+    marginHorizontal: 20,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  thumbnailsContainer: {
+    marginHorizontal: 0,
+  },
   mainImage: {
-    width:320,
+    width: width - 40, // Full width minus margins
     height: 240,
     resizeMode: 'cover',
-    //border-round
-    borderRadius:10,
-   
+    borderRadius: 10,
   },
   thumbWrap: {
     width: 74,
@@ -267,46 +413,133 @@ const styles = StyleSheet.create({
   },
   thumbActive: { borderColor: GOLD },
   thumbImg: { width: '100%', height: '100%', resizeMode: 'cover' },
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 0, paddingTop: 10 },
-  propTitle: { fontSize: 20, fontWeight: '800', color: '#111827' },
+  propTitle: { fontSize: 20, fontWeight: '800', color: '#111827', marginTop: 20 },
+  locationPriceRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 0, paddingTop: 8, marginBottom: 8 },
   locationText: { color: GRAY },
-  price: { color: GOLD, fontWeight: '800', marginLeft: 12, textAlign: 'right' },
-  sectionTitle: { paddingHorizontal: 0, marginTop: 16, marginBottom: 10, fontWeight: '700', color: '#111827',fontSize:16 },
+  price: { color: GOLD, fontWeight: '800', marginLeft: 12 },
+  sectionTitle: { 
+    paddingHorizontal: 0, 
+    marginTop: 24, 
+    marginBottom: 12, 
+    fontWeight: '700', 
+    color: '#111827',
+    fontSize: 16,
+  },
   grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 0 },
-  gridItem: { width: '33.333%', paddingVertical: 8 },
+  gridItem: { width: '50%', paddingVertical: 8 },
+  gridItemContent: { flexDirection: 'row', alignItems: 'center' },
+  gridIcon: { marginRight: 8 },
+  gridTextContainer: { flex: 1 },
   gridLabel: { color: GRAY, fontSize: 12 },
   gridValue: { color: '#111827', fontWeight: '700', marginTop: 2 },
+  utilitiesContainer: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 0 },
+  utilityChip: {
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  utilityText: { color: '#111827', fontSize: 14, fontWeight: '500' },
   desc: { paddingHorizontal: 0, color: '#374151', lineHeight: 20 },
   readMore: { paddingHorizontal: 0, color: GOLD, fontWeight: '600', marginTop: 6 },
   agentCard: {
     marginHorizontal: 0,
     marginTop: 8,
-    backgroundColor: BG,
-    // borderRadius: 12,
-    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    // shadowColor: '#000',
-    // shadowOpacity: 0.08,
-    // shadowRadius: 8,
-    // shadowOffset: { width: 0, height: 2 },
-    // elevation: 2,
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  agentAvatar: { width: 50, height: 50, borderRadius: 20 },
-  agentName: { fontWeight: '700', color: '#111827' },
-  agentRole: { color: GRAY, marginTop: 2 },
+  agentInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  agentAvatar: { 
+    width: 50, 
+    height: 50, 
+    borderRadius: 25, 
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12
+  },
+  agentDetails: { flex: 1 },
+  agentName: { fontWeight: '700', color: '#111827', fontSize: 16 },
+  agentRole: { color: GRAY, marginTop: 2, fontSize: 14 },
+  agentActions: { flexDirection: 'row', gap: 8 },
   agentAction: {
     width: 36,
     height: 36,
-    // borderRadius: 18,
-    // borderWidth: 1,
-    // borderColor: GOLD,
-    backgroundColor: '#f0f3f7ff',
+    backgroundColor: '#F3F4F6',
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 8,
+  },
+  mapContainer: {
+    marginHorizontal: 0,
+    marginTop: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  mapPlaceholder: {
+    height: 160,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  mapPlaceholderText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: GRAY,
+    fontWeight: '500',
+  },
+  mapPlaceholderSubtext: {
+    marginTop: 4,
+    fontSize: 12,
+    color: GRAY,
+  },
+  reviewsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 0,
+    marginTop: 24,
+    marginBottom: 12,
+  },
+  seeAll: { color: GOLD, fontWeight: '600', fontSize: 14, textTransform: 'none' },
+  reviewsPlaceholder: {
+    marginHorizontal: 0,
+    marginTop: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  reviewsPlaceholderText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: GRAY,
+    textAlign: 'center',
   },
   chip: {
     backgroundColor: '#f8ecf5ff',
@@ -320,7 +553,6 @@ const styles = StyleSheet.create({
   chipText: { color: '#111827', fontWeight: '600' },
   map: { height: 160, borderRadius: 12, marginHorizontal: 0, marginTop: 12, resizeMode: 'cover' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 0 },
-  seeAll: { color: GOLD, fontWeight: '600' },
   reviewCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
