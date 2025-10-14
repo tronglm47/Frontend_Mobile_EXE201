@@ -1,12 +1,15 @@
 import { Colors } from '@/constants/theme';
 import { register as apiRegister } from '@/apis/auth';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
+import Toast from '@/components/Toast';
 import { Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function RegisterScreen() {
+  const { role } = useLocalSearchParams<{ role: string }>();
+  
   const [email, setEmail] = React.useState('');
   const [username, setUsername] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -20,6 +23,27 @@ export default function RegisterScreen() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string[]>>({});
+  const [toastVisible, setToastVisible] = React.useState(false);
+  const [toastMessage, setToastMessage] = React.useState('');
+  const [toastType, setToastType] = React.useState<'success' | 'error' | 'info'>('info');
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+  const hideToast = () => setToastVisible(false);
+
+  // Redirect to role selection if no role is provided
+  React.useEffect(() => {
+    if (!role || !['user', 'landlord'].includes(role)) {
+      router.replace('/select-role');
+    }
+  }, [role]);
+
+  const getRoleDisplayName = () => {
+    return role === 'landlord' ? 'Chủ nhà' : 'Người thuê';
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -31,7 +55,8 @@ export default function RegisterScreen() {
         </View>
 
         <Text style={styles.heading}>Đăng Ký Tài Khoản</Text>
-  <Text style={styles.sub}>Vui lòng nhập thông tin cá nhân của bạn</Text>
+        <Text style={styles.sub}>Đăng ký tài khoản {getRoleDisplayName()}</Text>
+        <Text style={styles.sub}>Vui lòng nhập thông tin cá nhân của bạn</Text>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Email</Text>
@@ -258,18 +283,22 @@ export default function RegisterScreen() {
               }
 
               // Call API; if backend returns multiple errors, show them all
-              await apiRegister({ username, email, password, fullName, phoneNumber, role: 'user' });
-            
-
-               // After register, go to verify email screen, pass password for later prefill
-               router.replace({ pathname: '/verify-email', params: { email, username, password } } as any);
+              await apiRegister({ username, email, password, fullName, phoneNumber, role: role || 'user' });
+              showToast('Đăng ký thành công! Vui lòng xác thực email.', 'success');
+              // After register, go to verify email screen, pass password for later prefill
+              setTimeout(() => {
+                router.replace({ pathname: '/verify-email', params: { email, username, password } } as any);
+              }, 1200);
             } catch (e: any) {
               const apiErrors = e?.errors || e?.data?.errors;
               if (apiErrors && typeof apiErrors === 'object') {
                 setFieldErrors(apiErrors);
                 setError('Vui lòng kiểm tra lại các trường');
+                showToast('Vui lòng kiểm tra lại các trường', 'error');
               } else {
-                setError(e?.message || 'Đăng ký thất bại');
+                const msg = e?.message || 'Đăng ký thất bại';
+                setError(msg);
+                showToast(msg, 'error');
               }
             } finally {
               setLoading(false);
@@ -294,6 +323,7 @@ export default function RegisterScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <Toast visible={toastVisible} message={toastMessage} type={toastType} onHide={hideToast} />
     </SafeAreaView>
   );
 }

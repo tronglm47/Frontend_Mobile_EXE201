@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { FavoritesProvider } from './favorites-context';
 import { LocationProvider } from './location-context';
+import { RecentViewedProvider } from './recent-viewed-context';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 export const unstable_settings = {
@@ -22,6 +23,7 @@ export default function RootLayout() {
       <SafeAreaProvider>
       <FavoritesProvider>
       <LocationProvider>
+      <RecentViewedProvider>
       <Stack>
         {/* hide header for the root index (loading/redirect) */}
         <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -42,6 +44,7 @@ export default function RootLayout() {
   
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
+      </RecentViewedProvider>
       </LocationProvider>
       </FavoritesProvider>
       </SafeAreaProvider>

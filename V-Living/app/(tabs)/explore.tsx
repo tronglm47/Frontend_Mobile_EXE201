@@ -1,244 +1,808 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, Platform, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { Colors, Fonts } from '@/constants/theme';
-import { fetchLocations, LocationItem } from '@/apis/locations';
-import { fetchPropertyTypes, fetchPropertyForms, fetchPostTypes, fetchAmenities, attachPostAmenities, Amenity, PropertyForm, PropertyType, PostType } from '@/apis/master-data';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { createPost } from '@/apis/posts';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Toast from '@/components/Toast';
+import { Colors } from '@/constants/theme';
+import { fetchUtilities, fetchBuildings, fetchBuildingsPage, createLandlordPostWithImages, createUserPost, Utility, Building, LandlordPostBody, UserPostBody } from '@/apis/posts';
+import { router } from 'expo-router';
 
 export default function CreatePostTab() {
-  const [locations, setLocations] = useState<LocationItem[]>([]);
-  const [propertyTypes, setPropertyTypes] = useState<PropertyType[]>([]);
-  const [propertyForms, setPropertyForms] = useState<PropertyForm[]>([]);
-  const [postTypes, setPostTypes] = useState<PostType[]>([]);
-  const [amenities, setAmenities] = useState<Amenity[]>([]);
-
-  const [form, setForm] = useState({
-    userId: 0,
-    locationId: 0,
-    propertyTypeId: 0,
-    propertyFormId: 0,
-    postTypeId: 0,
-    title: '',
-    content: '',
-    price: '' as any,
-    selectedAmenityIds: [] as number[],
-    images: [] as string[],
-  });
+  const [utilities, setUtilities] = useState<Utility[]>([]);
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [showForms, setShowForms] = useState<'none' | 'user' | 'landlord'>('none');
+  const [images, setImages] = useState<{ uri: string; name: string; type: string }[]>([]);
+  const [primaryImageIndex, setPrimaryImageIndex] = useState<number>(0);
+  const [userSubmitting, setUserSubmitting] = useState(false);
+  const [userForm, setUserForm] = useState<UserPostBody>({ title: '', description: '' });
+  const [showBuildingDropdown, setShowBuildingDropdown] = useState(false);
+  const [buildingPage, setBuildingPage] = useState(1);
+  const [buildingHasMore, setBuildingHasMore] = useState(true);
+  const [showTypeDropdown, setShowTypeDropdown] = useState(false);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('info');
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+  const hideToast = () => setToastVisible(false);
+
+  const [form, setForm] = useState<LandlordPostBody>({
+    title: '',
+    description: '',
+    price: 0,
+    status: 'available',
+    utilityIds: [],
+    apartment: {
+      buildingId: 0,
+      apartmentCode: '',
+      floor: 0,
+      area: 0,
+      apartmentType: 'studio',
+      status: 'available',
+      numberBathroom: 1,
+    },
+  });
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const tokenUserId = await AsyncStorage.getItem('userId');
-      const parsedId = tokenUserId ? parseInt(tokenUserId, 10) : 0;
-      if (mounted) setForm((f) => ({ ...f, userId: parsedId }));
-      const [locs, types, forms, ptypes, ams] = await Promise.all([
-        fetchLocations(),
-        fetchPropertyTypes(),
-        fetchPropertyForms(),
-        fetchPostTypes(),
-        fetchAmenities(),
-      ]);
-      if (!mounted) return;
-      setLocations(locs);
-      setPropertyTypes(types);
-      setPropertyForms(forms);
-      setPostTypes(ptypes);
-      setAmenities(ams);
-    })();
-    return () => { mounted = false; };
+    loadData();
   }, []);
 
-  const canSubmit = useMemo(() => {
-    return !!(form.userId && form.locationId && form.propertyTypeId && form.propertyFormId && form.postTypeId && form.title && form.price);
-  }, [form]);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [utilitiesData, buildingsData] = await Promise.all([
+        fetchUtilities(),
+        fetchBuildings(),
+      ]);
+      setUtilities(utilitiesData);
+      setBuildings(buildingsData);
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể tải dữ liệu');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const submit = async () => {
-    if (!canSubmit) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập đủ các trường bắt buộc');
+  const loadMoreBuildings = async () => {
+    if (!buildingHasMore) return;
+    try {
+      const nextPage = buildingPage + 1;
+      const res = await fetchBuildingsPage(nextPage, 20);
+      if (res?.items?.length) {
+        setBuildings(prev => [...prev, ...res.items.filter(b => !prev.some(x => x.buildingId === b.buildingId))]);
+        setBuildingPage(nextPage);
+        setBuildingHasMore(nextPage < (res.totalPages || nextPage));
+      } else {
+        setBuildingHasMore(false);
+      }
+    } catch {}
+  };
+
+  const handleUtilityToggle = (utilityId: number) => {
+    setForm(prev => ({
+      ...prev,
+      utilityIds: prev.utilityIds.includes(utilityId)
+        ? prev.utilityIds.filter(id => id !== utilityId)
+        : [...prev.utilityIds, utilityId]
+    }));
+  };
+
+  const handleSubmit = async () => {
+    // Validation
+    if (!form.title.trim()) {
+      Alert.alert('Lỗi', 'Vui lòng nhập tiêu đề');
       return;
     }
+    if (!form.description.trim()) {
+      Alert.alert('Lỗi', 'Vui lòng nhập mô tả');
+      return;
+    }
+    if (form.price <= 0) {
+      Alert.alert('Lỗi', 'Vui lòng nhập giá hợp lệ');
+      return;
+    }
+    if (form.apartment.buildingId === 0) {
+      Alert.alert('Lỗi', 'Vui lòng chọn tòa nhà');
+      return;
+    }
+    if (!form.apartment.apartmentCode.trim()) {
+      Alert.alert('Lỗi', 'Vui lòng nhập mã căn hộ');
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-      const postId = await createPost({
-        userId: form.userId,
-        locationId: form.locationId,
-        propertyTypeId: form.propertyTypeId,
-        propertyFormId: form.propertyFormId,
-        postTypeId: form.postTypeId,
-        title: form.title,
-        content: form.content,
-        images: form.images,
-        price: Number(form.price),
+      const response = await createLandlordPostWithImages({
+        ...form,
+        images,
+        primaryImageIndex,
       });
-      if (postId) {
-        await attachPostAmenities(postId, form.selectedAmenityIds);
-      }
-      Alert.alert('Thành công', 'Đăng bài thành công');
-      setForm((f) => ({ ...f, title: '', content: '', price: '' as any, selectedAmenityIds: [], images: [] }));
-    } catch (e: any) {
-      Alert.alert('Lỗi', e?.message || 'Không thể đăng bài');
+      showToast('Đăng bài thành công!', 'success');
+      
+      // Reset form
+      setForm({
+        title: '',
+        description: '',
+        price: 0,
+        status: 'available',
+        utilityIds: [],
+        apartment: {
+          buildingId: 0,
+          apartmentCode: '',
+          floor: 0,
+          area: 0,
+          apartmentType: 'studio',
+          status: 'available',
+          numberBathroom: 1,
+        },
+      });
+      setImages([]);
+      setPrimaryImageIndex(0);
+      setShowForms('none');
+    } catch (error: any) {
+      showToast(error?.message || 'Không thể đăng bài', 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const pickImages = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (perm.status !== 'granted') {
-      Alert.alert('Quyền truy cập', 'Cần quyền truy cập ảnh để tải ảnh');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({ allowsMultipleSelection: true, mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
-    if (!result.canceled) {
-      const uris = ('assets' in result ? result.assets : []).map((a) => a.uri).filter(Boolean) as string[];
-      setForm((f) => ({ ...f, images: [...f.images, ...uris] }));
-    }
-  };
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text>Đang tải dữ liệu...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-      <ScrollView style={{ padding: 16 }} contentContainerStyle={{ paddingBottom: 24 }}>
-        <Text style={styles.title}>Đăng Bài</Text>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        {showForms !== 'none' ? (
+          <TouchableOpacity onPress={() => setShowForms('none')} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={22} color={Colors.light.text} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 36 }} />
+        )}
+        <Text style={styles.headerTitle}>Đăng Bài</Text>
+        <View style={{ width: 36 }} />
+      </View>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Title moved into header */}
 
-        <Field label="Chọn tòa">
-          <Picker
-            value={String(form.locationId)}
-            onChange={(v) => setForm((f) => ({ ...f, locationId: Number(v) }))}
-            placeholder="Vui lòng chọn tòa"
-            options={locations.map((l) => ({ label: l.name, value: String(l.locationId) }))}
-          />
-        </Field>
-
-        <Field label="Chọn loại căn hộ">
-          <Picker
-            value={String(form.propertyTypeId)}
-            onChange={(v) => setForm((f) => ({ ...f, propertyTypeId: Number(v) }))}
-            placeholder="Loại căn hộ"
-            options={propertyTypes.map((t) => ({ label: t.name, value: String(t.propertyTypeId) }))}
-          />
-        </Field>
-
-        <Field label="Loại hình">
-          <Picker
-            value={String(form.postTypeId)}
-            onChange={(v) => setForm((f) => ({ ...f, postTypeId: Number(v) }))}
-            placeholder="Chọn loại hình"
-            options={postTypes.map((t) => ({ label: t.name, value: String(t.postTypeId) }))}
-          />
-        </Field>
-
-        <Field label="Hình thức">
-          <Picker
-            value={String(form.propertyFormId)}
-            onChange={(v) => setForm((f) => ({ ...f, propertyFormId: Number(v) }))}
-            placeholder="Chọn hình thức"
-            options={propertyForms.map((t) => ({ label: t.name, value: String(t.propertyFormId) }))}
-          />
-        </Field>
-
-        <Field label="Giá (VND)">
-          <Input
-            keyboardType="numeric"
-            placeholder="Nhập giá"
-            value={String(form.price || '')}
-            onChangeText={(t) => setForm((f) => ({ ...f, price: t.replace(/[^0-9]/g, '') }))}
-          />
-        </Field>
-
-        <Field label="Tiêu đề">
-          <Input placeholder="Nhập tiêu đề" value={form.title} onChangeText={(t) => setForm((f) => ({ ...f, title: t }))} />
-        </Field>
-
-        <Field label="Mô tả">
-          <Input multiline placeholder="Nhập mô tả" value={form.content} onChangeText={(t) => setForm((f) => ({ ...f, content: t }))} />
-        </Field>
-
-        <Field label="Tiện ích">
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {amenities.map((a) => {
-              const checked = form.selectedAmenityIds.includes(a.amenityId);
-              return (
-                <TouchableOpacity key={a.amenityId} style={[styles.amenityChip, checked && styles.amenityChipActive]} onPress={() => {
-                  setForm((f) => ({
-                    ...f,
-                    selectedAmenityIds: checked ? f.selectedAmenityIds.filter((id) => id !== a.amenityId) : [...f.selectedAmenityIds, a.amenityId],
-                  }));
-                }}>
-                  <Text style={[styles.amenityChipText, checked && { color: '#000' }]}>{a.name}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </Field>
-
-        <Field label="Thêm ảnh">
-          <View style={{ gap: 10 }}>
-            <TouchableOpacity style={styles.upload} onPress={pickImages}>
-              <MaterialIcons name="cloud-upload" size={20} color="#E0B100" />
-              <Text style={{ color: '#6B7280' }}>Nhấn để chọn ảnh</Text>
+        {/* Post Type Selection - only chooser visible initially */}
+        {showForms === 'none' && (
+          <View style={styles.postTypeContainer}>
+            <TouchableOpacity
+              style={styles.postTypeButton}
+              onPress={() => setShowForms('user')}
+            >
+              <Ionicons name="person-outline" size={24} color="#E0B100" />
+              <Text style={styles.postTypeTitle}>Đăng bài đơn giản</Text>
+              <Text style={styles.postTypeDescription}>Tìm kiếm phòng trọ, chia sẻ thông tin</Text>
             </TouchableOpacity>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-              {form.images.map((uri, idx) => (
-                <View key={`${uri}-${idx}`} style={styles.previewBox}>
-                  <View style={{ flex: 1, backgroundColor: '#EEE', borderRadius: 8 }} />
-                </View>
-              ))}
-            </ScrollView>
+            
+            <TouchableOpacity
+              style={styles.postTypeButton}
+              onPress={() => setShowForms('landlord')}
+            >
+              <Ionicons name="business-outline" size={24} color="#E0B100" />
+              <Text style={styles.postTypeTitle}>Đăng bài cho thuê/bán</Text>
+              <Text style={styles.postTypeDescription}>Chủ nhà đăng bài chi tiết</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {showForms === 'landlord' && (
+        <>
+
+        {/* Title */}
+        <Field label="Tiêu đề *">
+          <TextInput
+            style={styles.input}
+            placeholder="Nhập tiêu đề bài đăng"
+            value={form.title}
+            onChangeText={(text) => setForm(prev => ({ ...prev, title: text }))}
+            placeholderTextColor="#9BA1A6"
+          />
+        </Field>
+
+        {/* Description */}
+        <Field label="Mô tả *">
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="Nhập mô tả chi tiết"
+            value={form.description}
+            onChangeText={(text) => setForm(prev => ({ ...prev, description: text }))}
+            multiline
+            numberOfLines={4}
+            textAlignVertical="top"
+            placeholderTextColor="#9BA1A6"
+          />
+        </Field>
+
+        {/* Price */}
+        <Field label="Giá (VND) *">
+          <TextInput
+            style={styles.input}
+            placeholder="Nhập giá"
+            value={form.price > 0 ? form.price.toString() : ''}
+            onChangeText={(text) => {
+              const price = parseInt(text.replace(/[^0-9]/g, '')) || 0;
+              setForm(prev => ({ ...prev, price }));
+            }}
+            keyboardType="numeric"
+            placeholderTextColor="#9BA1A6"
+          />
+        </Field>
+
+        {/* Building Selection */}
+        <Field label="Tòa nhà *">
+          <View style={{ position: 'relative' }}>
+            <TouchableOpacity
+              style={styles.picker}
+              onPress={() => setShowBuildingDropdown(v => !v)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.pickerText, form.apartment.buildingId === 0 && styles.placeholderText]}>
+                {buildings.find(b => b.buildingId === form.apartment.buildingId)?.name || 'Chọn tòa nhà'}
+              </Text>
+              <Ionicons name={showBuildingDropdown ? 'chevron-up' : 'chevron-down'} size={20} color="#9BA1A6" />
+            </TouchableOpacity>
+
+            {showBuildingDropdown && (
+              <View style={styles.dropdown}>
+                <ScrollView keyboardShouldPersistTaps="handled"
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                  onScroll={({ nativeEvent }) => {
+                    const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+                    const nearBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 24;
+                    if (nearBottom) loadMoreBuildings();
+                  }}
+                  scrollEventThrottle={100}
+                >
+                  {buildings.map((building) => (
+                    <TouchableOpacity
+                      key={building.buildingId}
+                      style={[
+                        styles.dropdownItem,
+                        form.apartment.buildingId === building.buildingId && styles.dropdownItemActive,
+                      ]}
+                      onPress={() => {
+                        setForm(prev => ({
+                          ...prev,
+                          apartment: { ...prev.apartment, buildingId: building.buildingId },
+                        }));
+                        setShowBuildingDropdown(false);
+                      }}
+                    >
+                      <Text numberOfLines={1} style={styles.dropdownItemText}>{building.name}</Text>
+                      {form.apartment.buildingId === building.buildingId ? (
+                        <Ionicons name="checkmark" size={18} color="#10B981" />
+                      ) : null}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
           </View>
         </Field>
 
-        <TouchableOpacity style={[styles.submitBtn, !canSubmit && { opacity: 0.6 }]} onPress={submit} disabled={!canSubmit || submitting}>
-          <Text style={styles.submitText}>{submitting ? 'Đang đăng...' : 'Đăng bài'}</Text>
+        {/* Apartment Code */}
+        <Field label="Mã căn hộ *">
+          <TextInput
+            style={styles.input}
+            placeholder="Ví dụ: 2209"
+            value={form.apartment.apartmentCode}
+            onChangeText={(text) => setForm(prev => ({
+              ...prev,
+              apartment: { ...prev.apartment, apartmentCode: text }
+            }))}
+            placeholderTextColor="#9BA1A6"
+          />
+        </Field>
+
+        {/* Floor */}
+        <Field label="Tầng">
+          <TextInput
+            style={styles.input}
+            placeholder="Nhập số tầng"
+            value={form.apartment.floor > 0 ? form.apartment.floor.toString() : ''}
+            onChangeText={(text) => {
+              const floor = parseInt(text.replace(/[^0-9]/g, '')) || 0;
+              setForm(prev => ({
+                ...prev,
+                apartment: { ...prev.apartment, floor }
+              }));
+            }}
+            keyboardType="numeric"
+            placeholderTextColor="#9BA1A6"
+          />
+        </Field>
+
+        {/* Area */}
+        <Field label="Diện tích (m²)">
+          <TextInput
+            style={styles.input}
+            placeholder="Nhập diện tích"
+            value={form.apartment.area > 0 ? form.apartment.area.toString() : ''}
+            onChangeText={(text) => {
+              const area = parseInt(text.replace(/[^0-9]/g, '')) || 0;
+              setForm(prev => ({
+                ...prev,
+                apartment: { ...prev.apartment, area }
+              }));
+            }}
+            keyboardType="numeric"
+            placeholderTextColor="#9BA1A6"
+          />
+        </Field>
+
+        {/* Apartment Type */}
+        <Field label="Loại căn hộ">
+          <View style={{ position: 'relative' }}>
+            <TouchableOpacity
+              style={styles.picker}
+              onPress={() => setShowTypeDropdown(v => !v)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.pickerText}>{form.apartment.apartmentType || 'Chọn loại căn hộ'}</Text>
+              <Ionicons name={showTypeDropdown ? 'chevron-up' : 'chevron-down'} size={20} color="#9BA1A6" />
+            </TouchableOpacity>
+
+            {showTypeDropdown && (
+              <View style={styles.dropdown}>
+                <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                  {['Studio', '1 phòng ngủ', '2 phòng ngủ', '3 phòng ngủ', 'Biệt thự'].map((type) => (
+                    <TouchableOpacity
+                      key={type}
+                      style={[styles.dropdownItem, form.apartment.apartmentType === type && styles.dropdownItemActive]}
+                      onPress={() => {
+                        setForm(prev => ({ ...prev, apartment: { ...prev.apartment, apartmentType: type } }));
+                        setShowTypeDropdown(false);
+                      }}
+                    >
+                      <Text numberOfLines={1} style={styles.dropdownItemText}>{type}</Text>
+                      {form.apartment.apartmentType === type ? (
+                        <Ionicons name="checkmark" size={18} color="#10B981" />
+                      ) : null}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        </Field>
+
+        {/* Number of Bathrooms */}
+        <Field label="Số phòng tắm">
+          <TextInput
+            style={styles.input}
+            placeholder="Nhập số phòng tắm"
+            value={form.apartment.numberBathroom > 0 ? form.apartment.numberBathroom.toString() : ''}
+            onChangeText={(text) => {
+              const bathrooms = parseInt(text.replace(/[^0-9]/g, '')) || 0;
+              setForm(prev => ({
+                ...prev,
+                apartment: { ...prev.apartment, numberBathroom: bathrooms }
+              }));
+            }}
+            keyboardType="numeric"
+            placeholderTextColor="#9BA1A6"
+          />
+        </Field>
+
+        {/* Images */}
+        <Field label="Thêm ảnh hoặc video">
+          <TouchableOpacity
+            style={styles.uploadBox}
+            onPress={async () => {
+              try {
+                // Request permission first
+                const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (perm.status !== 'granted') {
+                  showToast('Cần quyền truy cập thư viện ảnh', 'error');
+                  return;
+                }
+                const res = await ImagePicker.launchImageLibraryAsync({
+                  mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                  allowsMultipleSelection: true,
+                  quality: 0.8,
+                } as any);
+                if ((res as any).canceled) return;
+                const assets = (res as any).assets || [];
+                const files = assets.map((a: any, idx: number) => ({
+                  uri: a.uri,
+                  name: `image_${Date.now()}_${idx}.jpg`,
+                  type: a.mimeType || 'image/jpeg',
+                }));
+                setImages((prev) => [...prev, ...files]);
+              } catch (e) {
+                showToast('Không thể mở thư viện ảnh', 'error');
+              }
+            }}
+          >
+            <Ionicons name="cloud-upload-outline" size={36} color="#E0B100" />
+            <Text style={styles.uploadHint}>Nhấn để đăng hình</Text>
+          </TouchableOpacity>
+
+          {images.length > 0 && (
+            <View style={styles.previewGrid}>
+              {images.map((img, idx) => (
+                <TouchableOpacity key={idx} style={[styles.previewItem, idx === primaryImageIndex && styles.previewItemActive]} onPress={() => setPrimaryImageIndex(idx)}>
+                  <Image source={{ uri: img.uri }} style={styles.previewImage} />
+                  {idx === primaryImageIndex && (
+                    <View style={styles.previewBadge}><Text style={styles.previewBadgeText}>Ảnh chính</Text></View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </Field>
+
+        {/* Utilities */}
+        <Field label="Tiện ích">
+          <View style={styles.utilitiesContainer}>
+            {utilities.map(utility => (
+              <TouchableOpacity
+                key={utility.utilityId}
+                style={[
+                  styles.utilityChip,
+                  form.utilityIds.includes(utility.utilityId) && styles.utilityChipSelected
+                ]}
+                onPress={() => handleUtilityToggle(utility.utilityId)}
+              >
+                <Text style={[
+                  styles.utilityChipText,
+                  form.utilityIds.includes(utility.utilityId) && styles.utilityChipTextSelected
+                ]}>
+                  {utility.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Field>
+
+        {/* Submit Button */}
+        <TouchableOpacity
+          style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+          onPress={handleSubmit}
+          disabled={submitting}
+        >
+          <Text style={styles.submitButtonText}>
+            {submitting ? 'Đang đăng bài...' : 'Đăng bài'}
+          </Text>
         </TouchableOpacity>
+        </>
+        )}
+
+        {showForms === 'user' && (
+          <>
+            
+            <Field label="Tiêu đề *">
+              <TextInput
+                style={styles.input}
+                placeholder="Nhập tiêu đề bài đăng"
+                value={userForm.title}
+                onChangeText={(t) => setUserForm({ ...userForm, title: t })}
+                placeholderTextColor="#9BA1A6"
+              />
+            </Field>
+            <Field label="Mô tả *">
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Nhập mô tả"
+                value={userForm.description}
+                onChangeText={(t) => setUserForm({ ...userForm, description: t })}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                placeholderTextColor="#9BA1A6"
+              />
+            </Field>
+            <TouchableOpacity
+              style={[styles.submitButton, userSubmitting && styles.submitButtonDisabled]}
+              disabled={userSubmitting}
+              onPress={async () => {
+                if (!userForm.title.trim()) { Alert.alert('Lỗi', 'Vui lòng nhập tiêu đề'); return; }
+                if (!userForm.description.trim()) { Alert.alert('Lỗi', 'Vui lòng nhập mô tả'); return; }
+                setUserSubmitting(true);
+                try {
+                  const res = await createUserPost(userForm);
+                  showToast('Đăng bài thành công!', 'success');
+                  setUserForm({ title: '', description: '' });
+                  setShowForms('none');
+                } catch (e: any) {
+                  showToast(e?.message || 'Không thể đăng bài', 'error');
+                } finally {
+                  setUserSubmitting(false);
+                }
+              }}
+            >
+              <Text style={styles.submitButtonText}>{userSubmitting ? 'Đang đăng bài...' : 'Đăng bài'}</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </ScrollView>
+      <Toast visible={toastVisible} message={toastMessage} type={toastType} onHide={hideToast} />
     </SafeAreaView>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <View style={{ marginBottom: 14 }}>
-      <Text style={styles.label}>{label}</Text>
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
       {children}
     </View>
   );
 }
 
-function Input({ multiline, ...props }: any) {
-  return (
-    <TextInput
-      {...props}
-      multiline={!!multiline}
-      style={[styles.input, multiline && { height: 120, textAlignVertical: 'top' }]}
-      placeholderTextColor="#9BA1A6"
-    />
-  );
-}
-
-function Picker({ value, onChange, placeholder, options }: { value: string; onChange: (v: string) => void; placeholder: string; options: { label: string; value: string }[] }) {
-  return (
-    <View style={styles.pickerWrap}>
-      <Text style={[styles.pickerValue, !value && { color: '#9BA1A6' }]}>
-        {options.find((o) => o.value === value)?.label || placeholder}
-      </Text>
-      <TouchableOpacity onPress={() => Alert.alert('Chọn', '', options.map((o) => ({ text: o.label, onPress: () => onChange(o.value) })))}>
-        <MaterialIcons name="expand-more" size={20} color="#9BA1A6" />
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  title: { fontSize: 20, fontWeight: '700' as const, marginBottom: 12 },
-  label: { marginBottom: 8, color: '#4B5563' },
-  input: { borderWidth: 1, borderColor: '#F5D55B', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
-  pickerWrap: { borderWidth: 1, borderColor: '#F5D55B', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  pickerValue: { fontSize: 14 },
-  submitBtn: { backgroundColor: '#E0B100', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 10 },
-  submitText: { color: '#fff', fontWeight: '700' as const },
+  container: {
+    flex: 1,
+    backgroundColor: Colors.light.background,
+  },
+  header: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+    marginTop: 0,
+    backgroundColor: '#fff',
+  },
+  backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontWeight: '800', color: Colors.light.text, fontSize: 18 },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.light.text,
+    marginBottom: 20,
+    textAlign: 'center',
+
+  },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  backText: {
+    color: Colors.light.text,
+    fontWeight: '600',
+  },
+  postTypeContainer: {
+    marginTop: 180,
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  postTypeButton: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E6E8EB',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+    alignItems: 'center',
+    width: '90%',
+  },
+  postTypeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginTop: 8,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  postTypeDescription: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  uploadBox: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingVertical: 28,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  uploadHint: {
+    marginTop: 8,
+    color: '#9BA1A6',
+  },
+  previewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
+  },
+  previewItem: {
+    width: '31%',
+    aspectRatio: 1,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  previewItemActive: {
+    borderColor: '#E0B100',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  previewBadge: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    backgroundColor: '#E0B100',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  previewBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 16,
+  },
+  field: {
+    marginBottom: 16,
+  },
+  fieldLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#E6E8EB',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    backgroundColor: '#fff',
+    color: Colors.light.text,
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  picker: {
+    borderWidth: 1,
+    borderColor: '#E6E8EB',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  dropdown: {
+    position: 'absolute',
+    top: 52,
+    left: 0,
+    right: 0,
+    maxHeight: 220, // ~4-5 items
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E6E8EB',
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+    zIndex: 10,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    height: 44,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F1F5F9',
+  },
+  dropdownItemActive: {
+    backgroundColor: '#F9FAFB',
+  },
+  dropdownItemText: {
+    color: Colors.light.text,
+    fontSize: 14,
+    flex: 1,
+    marginRight: 8,
+  },
+  pickerText: {
+    fontSize: 16,
+    color: Colors.light.text,
+  },
+  placeholderText: {
+    color: '#9BA1A6',
+  },
+  utilitiesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  utilityChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E6E8EB',
+    backgroundColor: '#fff',
+  },
+  utilityChipSelected: {
+    backgroundColor: '#E0B100',
+    borderColor: '#E0B100',
+  },
+  utilityChipText: {
+    fontSize: 14,
+    color: Colors.light.text,
+  },
+  utilityChipTextSelected: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  submitButton: {
+    backgroundColor: '#E0B100',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 20,
+    shadowColor: '#E0B100',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });

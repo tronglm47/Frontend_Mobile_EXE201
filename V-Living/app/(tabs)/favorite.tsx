@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Platform, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -7,23 +7,53 @@ import { GOLD } from '@/constants/theme';
 import { router } from 'expo-router';
 import { LISTINGS } from '../listings';
 import { useFavorites } from '../favorites-context';
+import { fetchAllLandlordPosts, fetchBuildings, Building } from '@/apis/posts';
 
 const IMG = (seed: string, w = 600, h = 400) => `https://picsum.photos/seed/${seed}/${w}/${h}`;
 
 export default function FavoriteTab() {
   const { favorites, toggle } = useFavorites();
-  const items = LISTINGS.filter((l) => favorites.has(l.id));
+  const [items, setItems] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [posts, buildings] = await Promise.all([fetchAllLandlordPosts(), fetchBuildings()]);
+        if (!mounted) return;
+        const idToBadge: Record<number, string> = {};
+        buildings.forEach((b: Building) => { if (b.buildingId) idToBadge[b.buildingId] = [b.subdivisionName, b.name, (b as any).buildingName].filter(Boolean)[0]; });
+        const favIds = Array.from(favorites);
+        const filtered = (posts || []).filter((p: any) => favIds.includes(String(p.postId)));
+        const mapped = filtered.map((p: any) => {
+          const imgs = (p.images && p.images.length ? p.images.map((im: any) => im.imageUrl) : []).filter(Boolean);
+          const image = imgs[0] || p.primaryImageUrl || p.imageUrl || IMG(String(p.postId), 240, 180);
+          const price = p.price && p.price > 0 ? `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(p.price)} VND/tháng` : 'Liên hệ';
+          const area = idToBadge[p.apartment?.buildingId || (p as any).buildingId || 0] || '';
+          return { id: String(p.postId), title: p.title, area, price, rating: 4.5, image, seed: String(p.postId) };
+        });
+        setItems(mapped.length ? mapped : LISTINGS.filter((l) => favorites.has(l.id)));
+      } catch {
+        setItems(LISTINGS.filter((l) => favorites.has(l.id)));
+      }
+    })();
+    return () => { mounted = false; };
+  }, [favorites]);
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}><Text style={styles.title}>Yêu Thích</Text></View>
+      <View style={styles.header}>
+        <View style={{ width: 36 }} />
+        <Text style={styles.title}>Yêu Thích</Text>
+        <View style={{ width: 36 }} />
+      </View>
       <FlatList
         data={items}
         keyExtractor={(i) => i.id}
         contentContainerStyle={{ padding: 16, gap: 14 }}
         renderItem={({ item, index }) => (
           <TouchableOpacity style={styles.item} activeOpacity={0.9} onPress={() => router.push({ pathname: '/detail', params: { id: item.id } } as any)}>
-            <Image source={{ uri: IMG(item.seed, 240, 180) }} style={styles.img} contentFit="cover" />
+            <Image source={{ uri: item.image || IMG(item.seed, 240, 180) }} style={styles.img} contentFit="cover" />
             <View style={{ flex: 1, gap: 6 }}>
               <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -48,8 +78,18 @@ export default function FavoriteTab() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
-  header: { height: 56, alignItems: 'center', justifyContent: 'center' },
-  title: { fontWeight: '700', fontSize: 18, color: '#111827' },
+  header: { 
+    height: 56, 
+    flexDirection: 'row',
+    alignItems: 'center', 
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+    marginTop: 0,
+    backgroundColor: '#fff',
+  },
+  title: { fontWeight: '800', fontSize: 18, color: '#111827' },
   item: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 12, padding: 8, elevation: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6 },
   img: { width: 84, height: 84, borderRadius: 10 },
   itemTitle: { fontSize: 14, fontWeight: '700' },

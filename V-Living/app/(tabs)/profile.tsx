@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, ActivityIndicator, StatusBar, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { Ionicons } from '@expo/vector-icons';
 import { logout as apiLogout, getUserInfo, UserInfo } from '@/apis/auth';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -66,9 +67,13 @@ export default function ProfileTab() {
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 24 }}>
-        {/* Header */}
+        {/* Header (match booking style) */}
         <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={22} color={Colors.light.text} />
+          </TouchableOpacity>
           <Text style={styles.title}>Hồ sơ</Text>
+          <View style={{ width: 36 }} />
         </View>
 
         {/* Profile Section */}
@@ -165,15 +170,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    height: 56,
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 10,
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+    marginTop: 0,
   },
+  backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   title: { 
-    fontSize: 20, 
-    fontWeight: '700', 
-    color: Colors.light.text,
-    fontFamily: Fonts.rounded,
+    fontSize: 18, 
+    fontWeight: '800', 
+    color: '#111827',
   },
   profileSection: {
     alignItems: 'center',
