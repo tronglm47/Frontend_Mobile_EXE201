@@ -40,6 +40,13 @@ export type UserPostBody = {
   description: string;
 };
 
+export type BookingBody = {
+  postId: number;
+  meetingTime: string; // ISO 8601 format
+  placeMeet: string;
+  note: string;
+};
+
 export type PostResponse = {
   message: string;
   postId: number;
@@ -56,9 +63,11 @@ export type LandlordPostItem = {
   imageUrl?: string; // sometimes API returns top-level imageUrl
   images?: { imageId?: number; imageUrl: string; isPrimary?: boolean }[];
   buildingId?: number; // some responses have top-level buildingId
-  apartment?: {
-    buildingId: number;
-  };
+  apartment?: Apartment;
+  utilities?: Utility[];
+  status?: string;
+  userName?: string;
+  phoneNumber?: string;
   createdAt?: string;
 };
 
@@ -218,4 +227,27 @@ export async function fetchLandlordPostById(id: number | string): Promise<Landlo
   // Some backends nest under data
   const item = (res as any)?.data ? (res as any).data as LandlordPostItem : (res as any as LandlordPostItem);
   return item;
+}
+
+// Create booking
+export async function createBooking(booking: BookingBody): Promise<PostResponse> {
+  try {
+    console.log('Creating booking with data:', JSON.stringify(booking, null, 2));
+    // Try with auth first, fallback to no auth if needed
+    const res = await api.post<PostResponse>('Booking', booking, true);
+    console.log('Booking response:', res);
+    return res;
+  } catch (e) {
+    console.error('Failed to create booking:', e);
+    // If auth fails, try without auth
+    try {
+      console.log('Retrying without auth...');
+      const res = await api.post<PostResponse>('Booking', booking, false);
+      console.log('Booking response (no auth):', res);
+      return res;
+    } catch (e2) {
+      console.error('Failed to create booking without auth:', e2);
+      throw e;
+    }
+  }
 }
