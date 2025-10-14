@@ -5,9 +5,9 @@ import { Image } from 'expo-image';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { GOLD } from '@/constants/theme';
 import { router } from 'expo-router';
-import { LISTINGS } from '../listings';
 import { useFavorites } from '../favorites-context';
 import { fetchAllLandlordPosts, fetchBuildings, Building } from '@/apis/posts';
+import { setPostsInCache, prefetchImages } from '@/lib/post-cache';
 
 const IMG = (seed: string, w = 600, h = 400) => `https://picsum.photos/seed/${seed}/${w}/${h}`;
 
@@ -25,6 +25,7 @@ export default function FavoriteTab() {
         buildings.forEach((b: Building) => { if (b.buildingId) idToBadge[b.buildingId] = [b.subdivisionName, b.name, (b as any).buildingName].filter(Boolean)[0]; });
         const favIds = Array.from(favorites);
         const filtered = (posts || []).filter((p: any) => favIds.includes(String(p.postId)));
+        setPostsInCache(filtered);
         const mapped = filtered.map((p: any) => {
           const imgs = (p.images && p.images.length ? p.images.map((im: any) => im.imageUrl) : []).filter(Boolean);
           const image = imgs[0] || p.primaryImageUrl || p.imageUrl || IMG(String(p.postId), 240, 180);
@@ -32,9 +33,11 @@ export default function FavoriteTab() {
           const area = idToBadge[p.apartment?.buildingId || (p as any).buildingId || 0] || '';
           return { id: String(p.postId), title: p.title, area, price, rating: 4.5, image, seed: String(p.postId) };
         });
-        setItems(mapped.length ? mapped : LISTINGS.filter((l) => favorites.has(l.id)));
+        setItems(mapped);
+        // Prefetch visible images
+        await prefetchImages(mapped.map(m => m.image).filter(Boolean));
       } catch {
-        setItems(LISTINGS.filter((l) => favorites.has(l.id)));
+        setItems([]);
       }
     })();
     return () => { mounted = false; };

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -19,26 +19,64 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFavorites } from './favorites-context';
-import { getListingById } from './listings';
+import { fetchLandlordPostById, LandlordPostItem } from '../apis/posts';
+import { getPostFromCache, setPostInCache } from '../lib/post-cache';
 
 const GOLD = '#E0B100';
 const GRAY = '#6B7280';
 const BG = '#F7F7F8';
 const { width } = Dimensions.get('window');
 
-const IMG = (seed: string, w = 800, h = 600) => ({ uri: `https://picsum.photos/seed/${seed}/${w}/${h}` });
+const fmtCurrency = (v?: number) => {
+  if (!v || v <= 0) return 'Liên hệ';
+  try {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(v);
+  } catch {
+    return `${v} VND`;
+  }
+};
 
 
 
 export default function DetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
-  const listing = useMemo(() => getListingById(String(params.id || 'l1')), [params.id]);
+  const postId = useMemo(() => (params.id ? String(params.id) : undefined), [params.id]);
   const { isFav, toggle } = useFavorites();
-  const fav = isFav(listing?.id || '');
+  const [post, setPost] = useState<LandlordPostItem | undefined>();
+  const fav = isFav(postId || '');
   const [expanded, setExpanded] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | undefined>();
   const scrollX = useRef(new Animated.Value(0)).current;
   const sliderRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!postId) {
+        setError('Thiếu mã bài viết');
+        return;
+      }
+      // Try cache first for instant render
+      const cached = getPostFromCache(postId);
+      if (cached) setPost(cached);
+      setLoading(!cached);
+      setError(undefined);
+      try {
+        const data = await fetchLandlordPostById(postId);
+        if (mounted && data) {
+          setPost(data);
+          setPostInCache(data);
+        }
+      } catch (e: any) {
+        if (mounted && !cached) setError(e?.message || 'Không thể tải dữ liệu');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [postId]);
 
   const goContact = () => {
     Linking.openURL('tel:0900000000').catch(() => Alert.alert('Không thể mở cuộc gọi'));
@@ -53,8 +91,16 @@ export default function DetailScreen() {
     } catch {}
   };
 
-  const renderImage = ({ item }: { item: any }) => (
-    <Image source={IMG(listing?.seed + '-' + item, 800, 600)} style={styles.mainImage} />
+  const imageUrls = useMemo(() => {
+    const urls: string[] = [];
+    if (post?.images?.length) urls.push(...post.images.map(i => i.imageUrl).filter(Boolean));
+    if (!urls.length && post?.primaryImageUrl) urls.push(post.primaryImageUrl);
+    if (!urls.length && (post as any)?.imageUrl) urls.push((post as any).imageUrl);
+    return urls;
+  }, [post]);
+
+  const renderImage = ({ item }: { item: string }) => (
+    <Image source={{ uri: item }} style={styles.mainImage} />
   );
 
   return (
@@ -73,17 +119,29 @@ export default function DetailScreen() {
           <TouchableOpacity onPress={onShare} style={styles.roundBtn}>
               <Ionicons name="share-social-outline" size={27} color="#111827" />
             </TouchableOpacity>
-          <TouchableOpacity onPress={() => listing?.id && toggle(listing.id)} style={styles.roundBtn}>
+          <TouchableOpacity onPress={() => postId && toggle(postId)} style={styles.roundBtn}>
             <Ionicons name={fav ? 'heart' : 'heart-outline'} size={27} color={fav ? GOLD : '#111827'} />
             </TouchableOpacity>
           </View>
         </View>
 
+        {loading && !post && (
+          <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+            <Text>Đang tải...</Text>
+          </View>
+        )}
+
+        {!!error && (
+          <View style={{ paddingVertical: 12 }}>
+            <Text style={{ color: '#DC2626' }}>{error}</Text>
+          </View>
+        )}
+
         {/* Image carousel */}
         <Animated.FlatList
           ref={sliderRef}
-          data={[0,1,2,3,4,5]}
-          keyExtractor={(_, i) => String(i)}
+          data={imageUrls}
+          keyExtractor={(uri, i) => uri || String(i)}
           renderItem={renderImage}
           horizontal
           pagingEnabled
@@ -101,8 +159,8 @@ export default function DetailScreen() {
         {/* Thumbnails */}
         <FlatList
           horizontal
-          data={IMG(listing?.seed || 'x', 100, 100) ? [0,1,2,3,4,5] : []}
-          keyExtractor={(_, i) => 'thumb-' + i}
+          data={imageUrls}
+          keyExtractor={(uri, i) => 'thumb-' + (uri || i)}
           contentContainerStyle={{  paddingTop: 10, height: 102 }}
           showsHorizontalScrollIndicator={false}
           renderItem={({ item, index }) => (
@@ -110,7 +168,7 @@ export default function DetailScreen() {
               onPress={() => sliderRef.current?.scrollToIndex({ index, animated: true })}
               style={[styles.thumbWrap, activeIdx === index && styles.thumbActive]}
             >
-              <Image source={item} style={styles.thumbImg} />
+              <Image source={{ uri: item }} style={styles.thumbImg} />
             </TouchableOpacity>
           )}
           ItemSeparatorComponent={() => <View style={{ width: 8, backgroundColor: 'transparent' }} />}
@@ -119,85 +177,38 @@ export default function DetailScreen() {
         {/* Title & price */}
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.propTitle}>ORIGAMI</Text>
+            <Text style={styles.propTitle}>{post?.title || 'Bất động sản'}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
               <Ionicons name="location-outline" size={14} color={GRAY} />
-              <Text style={styles.locationText}> Origami</Text>
+              <Text style={styles.locationText}> {post?.apartment?.buildingId ? `Tòa ${post.apartment.buildingId}` : '—'}</Text>
             </View>
           </View>
-          <Text style={styles.price}>3.000.000 VND/month</Text>
+          <Text style={styles.price}>{fmtCurrency(post?.price)}</Text>
         </View>
 
-        {/* Property details grid */}
-        <Text style={styles.sectionTitle}>Property Details</Text>
-        <View style={styles.grid}>
-          <DetailItem label="Bedrooms" value="3" />
-          <DetailItem label="Bathtub" value="2" />
-          <DetailItem label="Area" value="1,880 sqft" />
-          <DetailItem label="Build" value="2020" />
-          <DetailItem label="Parking" value="1 Indoor" />
-          <DetailItem label="Status" value="For Rent" />
-        </View>
+        {/* Property details grid removed until real fields available */}
 
         {/* Description */}
         <Text style={styles.sectionTitle}>Description</Text>
-        <Text numberOfLines={expanded ? undefined : 3} style={styles.desc}>
-          Lorem Ipsum is simply dummy text of the printing and typesetting industry. 1500s, when an unknown printer took
-          a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but
-          also the leap into electronic typesetting, remaining essentially unchanged.
-        </Text>
+        {!!post?.description && (
+          <Text numberOfLines={expanded ? undefined : 3} style={styles.desc}>
+            {post.description}
+          </Text>
+        )}
+        {!post?.description && (
+          <Text style={styles.desc}>Không có mô tả</Text>
+        )}
         <TouchableOpacity onPress={() => setExpanded((e) => !e)}>
           <Text style={styles.readMore}>{expanded ? 'Read less' : 'Read more'}</Text>
         </TouchableOpacity>
 
-        {/* Agent */}
-        <Text style={styles.sectionTitle}>Agent</Text>
-        <View style={styles.agentCard}>
-          <Image source={require('../assets/images/icon.png')} style={styles.agentAvatar} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.agentName}>Esther Howard</Text>
-            <Text style={styles.agentRole}>Real Estate Agent</Text>
-          </View>
-          <TouchableOpacity onPress={() => Linking.openURL('tel:0900000000')} style={styles.agentAction}>
-            <Ionicons name="call-outline" size={27} color={GOLD} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => Alert.alert('Chat', 'Tính năng chat đang được phát triển')} style={styles.agentAction}>
-            <Ionicons name="chatbubble-ellipses-outline" size={27} color={GOLD} />
-          </TouchableOpacity>
-        </View>
+        {/* Agent section removed until integrated with backend */}
 
-        {/* Facilities */}
-        <Text style={styles.sectionTitle}>Location & Public Facilities</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 0 }}>
-          {['Hospital', 'Gas stations', 'Mall', 'Mosque'].map((t) => (
-            <View key={t} style={styles.chip}><Text style={styles.chipText}>{t}</Text></View>
-          ))}
-        </ScrollView>
+        {/* Facilities section removed until real data available */}
 
-        {/* Map placeholder */}
-        <Image source={require('../assets/images/screenKhoa/detail.png')} style={styles.map} />
+        {/* Map section intentionally omitted until real coordinates are available */}
 
-        {/* Reviews */}
-        <View style={styles.rowBetween}>
-          <Text style={styles.sectionTitle}>Reviews 152</Text>
-          <TouchableOpacity><Text style={styles.seeAll}>See all</Text></TouchableOpacity>
-        </View>
-        <View style={styles.reviewCard}>
-          <Image source={require('../assets/images/icon.png')} style={styles.reviewAvatar} />
-          <View style={{ flex: 1 }}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.reviewName}>Theresa Webb</Text>
-              <View style={{ flexDirection: 'row' }}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Ionicons key={i} name="star" size={14} color={i < 4 ? GOLD : '#E5E7EB'} />
-                ))}
-              </View>
-            </View>
-            <Text style={styles.reviewText}>
-              Lorem Ipsum is simply dummy text of the printing industry. 1500s, when an unknown printer took...
-            </Text>
-          </View>
-        </View>
+        {/* Reviews section removed until real data available */}
 
         <View style={{ height: 100 }} />
       </ScrollView>

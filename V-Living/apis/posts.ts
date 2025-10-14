@@ -51,6 +51,7 @@ export type LandlordPostItem = {
   postId: number;
   title: string;
   price: number;
+  description?: string;
   primaryImageUrl?: string;
   imageUrl?: string; // sometimes API returns top-level imageUrl
   images?: { imageId?: number; imageUrl: string; isPrimary?: boolean }[];
@@ -208,4 +209,13 @@ export async function fetchAllLandlordPosts(): Promise<LandlordPostItem[]> {
     // If dates are same or missing, sort by postId (higher ID = newer)
     return b.postId - a.postId;
   });
+}
+
+// Fetch single landlord post by ID
+export async function fetchLandlordPostById(id: number | string): Promise<LandlordPostItem | undefined> {
+  // NOTE: Base URL already ends with /api, so we must not prefix here
+  const res = await api.get<LandlordPostItem | { data?: LandlordPostItem }>(`Post/landlord/${id}`);
+  // Some backends nest under data
+  const item = (res as any)?.data ? (res as any).data as LandlordPostItem : (res as any as LandlordPostItem);
+  return item;
 }
