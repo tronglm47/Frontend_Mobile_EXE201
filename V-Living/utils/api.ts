@@ -83,5 +83,6 @@ export async function request<T>(
 export const api = {
   get:  <T>(path: string, auth = false) => request<T>(path, { method: 'GET', auth }),
   post: <T>(path: string, body?: any, auth = false) => request<T>(path, { method: 'POST', body, auth }),
+  put:  <T>(path: string, body?: any, auth = false) => request<T>(path, { method: 'PUT', body, auth }),
   del:  <T>(path: string, auth = false) => request<T>(path, { method: 'DELETE', auth }),
 };

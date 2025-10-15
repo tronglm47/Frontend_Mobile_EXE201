@@ -1,4 +1,4 @@
-import { api } from '../utils/api';
+import { api } from '../lib/api';
 
 // Types for new Post API
 export type Utility = {
@@ -229,6 +229,46 @@ export async function fetchLandlordPostById(id: number | string): Promise<Landlo
   return item;
 }
 
+// Types for booking response
+export type BookingItem = {
+  bookingId: number;
+  postId: number;
+  postTitle: string;
+  postDescription?: string;
+  postPrice: number;
+  postType: string;
+  meetingTime: string;
+  placeMeet: string;
+  note?: string;
+  status: string;
+  createdAt: string;
+  // For user bookings (when user books someone's post)
+  landlordId?: number;
+  landlordName?: string;
+  landlordEmail?: string;
+  landlordPhone?: string;
+  // For landlord bookings (when someone books landlord's post)
+  renterId?: number;
+  renterName?: string;
+  renterEmail?: string;
+  renterPhone?: string;
+  // Additional fields
+  apartment?: any;
+  distanceToMeeting?: number;
+  estimatedArrivalTime?: string;
+  isLocationTrackingEnabled?: boolean;
+  meetingAddress?: string;
+  meetingLatitude?: number;
+  meetingLongitude?: number;
+};
+
+export type MyBookingsResponse = {
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  items: BookingItem[];
+};
+
 // Create booking
 export async function createBooking(booking: BookingBody): Promise<PostResponse> {
   try {
@@ -249,5 +289,81 @@ export async function createBooking(booking: BookingBody): Promise<PostResponse>
       console.error('Failed to create booking without auth:', e2);
       throw e;
     }
+  }
+}
+
+// Fetch landlord's bookings (bookings made to their posts)
+export async function fetchLandlordBookings(): Promise<BookingItem[]> {
+  try {
+    console.log('Fetching landlord bookings...');
+    const res = await api.get<MyBookingsResponse>('Booking/landlord-bookings', true);
+    console.log('Landlord bookings response:', res);
+    return res?.items || [];
+  } catch (e) {
+    console.error('Failed to fetch landlord bookings:', e);
+    console.error('Error status:', (e as any)?.status);
+    console.error('Error data:', (e as any)?.data);
+    throw e;
+  }
+}
+
+// Fetch user's bookings
+export async function fetchMyBookings(): Promise<BookingItem[]> {
+  try {
+    console.log('Fetching my bookings...');
+    const res = await api.get<MyBookingsResponse>('Booking/my-bookings', true);
+    console.log('My bookings response:', res);
+    return res?.items || [];
+  } catch (e) {
+    console.error('Failed to fetch my bookings:', e);
+    console.error('Error status:', (e as any)?.status);
+    console.error('Error data:', (e as any)?.data);
+    throw e;
+  }
+}
+
+// Fetch all bookings based on user role
+export async function fetchAllBookings(): Promise<BookingItem[]> {
+  try {
+    console.log('Fetching all bookings...');
+    
+    // Always fetch user's own bookings
+    const myBookings = await fetchMyBookings();
+    console.log('My bookings:', myBookings);
+    
+    // Try to fetch landlord bookings (will fail if user is not landlord)
+    let landlordBookings: BookingItem[] = [];
+    try {
+      landlordBookings = await fetchLandlordBookings();
+      console.log('Landlord bookings:', landlordBookings);
+    } catch (landlordError) {
+      console.log('User is not a landlord or no landlord bookings:', landlordError);
+      // This is expected for regular users, so we don't throw
+    }
+    
+    // Merge and deduplicate bookings
+    const allBookings = [...myBookings, ...landlordBookings];
+    const uniqueBookings = allBookings.filter((booking, index, self) => 
+      index === self.findIndex(b => b.bookingId === booking.bookingId)
+    );
+    
+    console.log('All unique bookings:', uniqueBookings);
+    return uniqueBookings;
+  } catch (e) {
+    console.error('Failed to fetch all bookings:', e);
+    throw e;
+  }
+}
+
+// Update booking status with optional note
+export async function updateBookingStatus(
+  bookingId: number,
+  params: { status: string; note?: string }
+): Promise<{ message?: string }> {
+  try {
+    return await api.put<{ message?: string }>(`Booking/${bookingId}/status`, params, true);
+  } catch (e) {
+    console.error('Failed to update booking status:', e);
+    throw e;
   }
 }

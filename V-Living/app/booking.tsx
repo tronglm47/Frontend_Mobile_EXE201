@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Image,
   Platform,
@@ -11,93 +11,234 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Linking,
+  Alert,
 } from 'react-native';
 import EmptyBooking from '../components/illustrations/EmptyBooking';
+import { fetchAllBookings, BookingItem, fetchLandlordPostById, LandlordPostItem, updateBookingStatus } from '../apis/posts';
+import { getPostFromCache, setPostInCache } from '../lib/post-cache';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GOLD = '#E0B100';
 const BORDER = '#E5E7EB';
 const TEXT = '#111827';
 const MUTED = '#6B7280';
 
-type Booking = {
-  id: string;
-  title: string;
-  place: string;
-  range: string;
-  image: any;
-  status: 'pendingPay' | 'processing' | 'done' | 'canceled';
-};
-
-const thumbs = [
-  require('../assets/images/screenKhoa/detail.png'),
-  require('../assets/images/screenKhoa/detail.png'),
-  require('../assets/images/screenKhoa/detail.png'),
-  require('../assets/images/screenKhoa/detail.png'),
-];
-
 export default function BookingScreen() {
   const [tab, setTab] = useState<'upcoming' | 'completed' | 'canceled'>('upcoming');
+  const [bookings, setBookings] = useState<BookingItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [postImageMap, setPostImageMap] = useState<Record<number, string>>({});
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
 
-  // demo data
-  const upcoming: Booking[] = [
-    // { id: '1', title: 'Origami S10.02', place: 'Origami', range: '12/08 - 12/08', image: thumbs[0], status: 'pendingPay' },
-    // { id: '2', title: 'Beverly B2', place: 'Beverly', range: '08/08 - 12/08', image: thumbs[1], status: 'processing' },
-  ];
-  const completed: Booking[] = [
-    { id: '3', title: 'Beverly Solari BS10', place: 'Beverly Solari', range: '08/08 - 12/08', image: thumbs[2], status: 'done' },
-  ];
-  const canceled: Booking[] = [
-    { id: '4', title: 'Rainbow S1.02', place: 'Rainbow', range: '08 Aug - 12 Aug', image: thumbs[3], status: 'canceled' },
-  ];
+  useEffect(() => {
+    loadBookings();
+  }, []);
+
+  const loadBookings = async () => {
+    try {
+      setLoading(true);
+      console.log('Loading bookings...');
+      
+      // Check if user is authenticated
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Lỗi', 'Bạn cần đăng nhập để xem lịch đặt');
+        return;
+      }
+      
+      const data = await fetchAllBookings();
+      console.log('Bookings loaded:', data);
+      setBookings(data);
+    } catch (error: any) {
+      console.error('Failed to load bookings:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      
+      if (error?.status === 401) {
+        Alert.alert('Lỗi', 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        // Optionally redirect to login
+        // router.replace('/(auth)/login');
+      } else {
+        Alert.alert('Lỗi', `Không thể tải danh sách lịch đặt: ${error?.message || String(error)}`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter bookings by status (case insensitive)
+  const upcoming = bookings.filter(b => b.status?.toLowerCase() === 'pending');
+  const completed = bookings.filter(b => b.status?.toLowerCase() === 'completed');
+  const canceled = bookings.filter(b => b.status?.toLowerCase() === 'cancelled');
 
   const list = tab === 'upcoming' ? upcoming : tab === 'completed' ? completed : canceled;
 
-  const renderStatus = (s: Booking['status']) => {
-    switch (s) {
-      case 'pendingPay':
-        return <View style={[styles.badge, { backgroundColor: '#FEE2E2' }]}><Text style={[styles.badgeText, { color: '#DC2626' }]}>Chờ thanh toán</Text></View>;
-      case 'processing':
-        return <View style={[styles.badge, { backgroundColor: '#DCFCE7' }]}><Text style={[styles.badgeText, { color: '#059669' }]}>Đang xử lí</Text></View>;
-      case 'done':
+  const renderStatus = (booking: BookingItem) => {
+    const status = booking.status?.toLowerCase();
+    switch (status) {
+      case 'pending':
+        return <View style={[styles.badge, { backgroundColor: '#FEF3C7' }]}><Text style={[styles.badgeText, { color: '#D97706' }]}>Chờ xác nhận</Text></View>;
+      case 'confirmed':
+        return <View style={[styles.badge, { backgroundColor: '#DCFCE7' }]}><Text style={[styles.badgeText, { color: '#059669' }]}>Đã xác nhận</Text></View>;
+      case 'completed':
         return <View style={[styles.badge, { backgroundColor: '#DCFCE7' }]}><Text style={[styles.badgeText, { color: '#059669' }]}>Hoàn thành</Text></View>;
-      case 'canceled':
+      case 'cancelled':
         return <View style={[styles.badge, { backgroundColor: '#FEE2E2' }]}><Text style={[styles.badgeText, { color: '#DC2626' }]}>Đã hủy</Text></View>;
+      default:
+        return <View style={[styles.badge, { backgroundColor: '#F3F4F6' }]}><Text style={[styles.badgeText, { color: MUTED }]}>{booking.status}</Text></View>;
     }
   };
 
-  const renderItem = (b: Booking) => (
-    <TouchableOpacity key={b.id} style={styles.item} onPress={() => router.push('/detail')}>
-      <Image source={b.image} style={styles.thumb} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.itemTitle}>{b.title}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-          <Ionicons name="location-outline" size={14} color={MUTED} />
-          <Text style={styles.placeText}> {b.place}</Text>
+  const extractPrimaryImage = (post?: Partial<LandlordPostItem> | null): string | undefined => {
+    if (!post) return undefined;
+    if (post.primaryImageUrl) return post.primaryImageUrl;
+    if ((post as any).imageUrl) return (post as any).imageUrl as string;
+    const imgs = post.images || [];
+    const primary = imgs.find(i => i.isPrimary) || imgs[0];
+    return primary?.imageUrl;
+  };
+
+  const getPostImageUrl = (postId?: number): string | undefined => {
+    if (!postId && postId !== 0) return undefined;
+    const cached = postImageMap[postId];
+    if (cached) return cached;
+    const cachedPost = getPostFromCache(postId);
+    const cachedUrl = extractPrimaryImage(cachedPost);
+    if (cachedUrl) return cachedUrl;
+    // Trigger async fetch, store to state when arrives
+    (async () => {
+      try {
+        const post = await fetchLandlordPostById(postId);
+        if (post) {
+          setPostInCache(post);
+          const url = extractPrimaryImage(post);
+          if (url) {
+            setPostImageMap(prev => ({ ...prev, [postId]: url }));
+          }
+        }
+      } catch {}
+    })();
+    return undefined;
+  };
+
+  const formatDateTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  };
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: 'VND'
+    }).format(price);
+  };
+
+  const goContact = (phoneNumber?: string) => {
+    const phone = phoneNumber || '0900000000';
+    Linking.openURL(`tel:${phone}`).catch(() => Alert.alert('Không thể mở cuộc gọi'));
+  };
+
+  const goZalo = (phoneNumber?: string) => {
+    const phone = phoneNumber || '0900000000';
+    Linking.openURL(`https://zalo.me/${phone}`).catch(() => Alert.alert('Không thể mở Zalo'));
+  };
+
+  const renderItem = (booking: BookingItem) => (
+    <View key={booking.bookingId} style={styles.item}>
+      <TouchableOpacity 
+        style={styles.itemContent}
+        onPress={() => router.push(`/detail?id=${booking.postId}`)}
+      >
+        <Image 
+          source={(() => {
+            const url = getPostImageUrl(booking.postId);
+            return url ? { uri: url } : require('../assets/images/screenKhoa/detail.png');
+          })()}
+          style={styles.thumb} 
+        />
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={2} ellipsizeMode="tail" style={styles.itemTitle}>{booking.postTitle || 'N/A'}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+            <Ionicons name="location-outline" size={14} color={MUTED} />
+            <Text style={styles.placeText}> {booking.placeMeet}</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+            <Ionicons name="time-outline" size={14} color={MUTED} />
+            <Text style={styles.rangeText}> {formatDateTime(booking.meetingTime)}</Text>
+          </View>
+          <Text style={styles.priceText}>{formatPrice(booking.postPrice || 0)}/tháng</Text>
         </View>
-        <Text style={styles.rangeText}>{b.range}</Text>
+        {renderStatus(booking)}
+      </TouchableOpacity>
+      
+      {/* Action buttons integrated into the item */}
+      <View style={styles.actionButtons}>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => goContact(booking.landlordPhone || booking.renterPhone)}
+        >
+          <Ionicons name="call-outline" size={18} color={GOLD} />
+          <Text style={styles.actionButtonText}>Gọi</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => goZalo(booking.landlordPhone || booking.renterPhone)}
+        >
+          <Ionicons name="chatbubble-outline" size={18} color="#0068FF" />
+          <Text style={[styles.actionButtonText, { color: '#0068FF' }]}>Zalo</Text>
+        </TouchableOpacity>
+        
+        {/* Landlord quick complete */}
+        {booking.status?.toLowerCase() !== 'completed' && booking.landlordId && (
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={async () => {
+              try {
+                const note = await new Promise<string | undefined>((resolve) => {
+                  Alert.prompt?.('Hoàn thành lịch hẹn', 'Nhập ghi chú (tuỳ chọn)', [
+                    { text: 'Huỷ', style: 'cancel', onPress: () => resolve(undefined) },
+                    { text: 'Xác nhận', onPress: (value?: string) => resolve(value) },
+                  ], 'plain-text');
+                  if (!Alert.prompt) resolve(undefined);
+                });
+                setUpdatingId(booking.bookingId);
+                await updateBookingStatus(booking.bookingId, { status: 'completed', note });
+                await loadBookings();
+              } catch (e) {
+                Alert.alert('Lỗi', 'Không thể cập nhật trạng thái');
+              } finally {
+                setUpdatingId(null);
+              }
+            }}
+          >
+            <Ionicons name="checkmark-done-outline" size={18} color="#059669" />
+            <Text style={[styles.actionButtonText, { color: '#059669' }]}>Hoàn thành</Text>
+          </TouchableOpacity>
+        )}
+
+        {booking.status?.toLowerCase() === 'completed' && (
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => {
+              // TODO: Implement rating functionality
+              Alert.alert('Đánh giá', 'Chức năng đánh giá sẽ được triển khai');
+            }}
+          >
+            <Ionicons name="star-outline" size={18} color="#F59E0B" />
+            <Text style={[styles.actionButtonText, { color: '#F59E0B' }]}>Đánh giá</Text>
+          </TouchableOpacity>
+        )}
       </View>
-      {renderStatus(b.status)}
-    </TouchableOpacity>
+    </View>
   );
-
-  const renderActions = () => {
-    if (tab === 'completed') {
-      return (
-        <View style={styles.actionList}>
-          <ActionRow icon="star-outline" color="#F59E0B" label="Đánh giá" onPress={() => {}} />
-          <ActionRow icon="call-outline" color={GOLD} label="Liên lạc" onPress={() => {}} />
-        </View>
-      );
-    }
-    if (tab === 'canceled') {
-      return (
-        <View style={styles.actionList}>
-          <ActionRow icon="call-outline" color={GOLD} label="Liên lạc" onPress={() => {}} />
-        </View>
-      );
-    }
-    return null;
-  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -108,23 +249,28 @@ export default function BookingScreen() {
           <Ionicons name="chevron-back" size={22} color={TEXT} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Lịch đặt</Text>
-        <View style={{ width: 36 }} />
+        <TouchableOpacity onPress={loadBookings} style={styles.refreshBtn}>
+          <Ionicons name="refresh" size={22} color={TEXT} />
+        </TouchableOpacity>
       </View>
 
       {/* Segmented control */}
       <View style={styles.segment}>
-        <SegmentBtn label="Sắp tới" active={tab === 'upcoming'} onPress={() => setTab('upcoming')} />
-        <SegmentBtn label="Hoàn thành" active={tab === 'completed'} onPress={() => setTab('completed')} />
-        <SegmentBtn label="Đã hủy" active={tab === 'canceled'} onPress={() => setTab('canceled')} />
+        <SegmentBtn label={`Sắp tới (${upcoming.length})`} active={tab === 'upcoming'} onPress={() => setTab('upcoming')} />
+        <SegmentBtn label={`Hoàn thành (${completed.length})`} active={tab === 'completed'} onPress={() => setTab('completed')} />
+        <SegmentBtn label={`Đã hủy (${canceled.length})`} active={tab === 'canceled'} onPress={() => setTab('canceled')} />
       </View>
 
       {/* Content */}
-      {list.length === 0 ? (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Đang tải...</Text>
+        </View>
+      ) : list.length === 0 ? (
         <EmptyState />
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16 }}>
           {list.map(renderItem)}
-          {renderActions()}
           <View style={{ height: 24 }} />
         </ScrollView>
       )}
@@ -140,15 +286,6 @@ function SegmentBtn({ label, active, onPress }: { label: string; active: boolean
   );
 }
 
-function ActionRow({ icon, color, label, onPress }: { icon: any; color: string; label: string; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.actionRow} onPress={onPress}>
-      <Ionicons name={icon} size={18} color={color} />
-      <Text style={styles.actionLabel}>{label}</Text>
-      <Ionicons name="chevron-forward" size={18} color={MUTED} style={{ marginLeft: 'auto' }} />
-    </TouchableOpacity>
-  );
-}
 
 function EmptyState() {
   return (
@@ -174,6 +311,7 @@ const styles = StyleSheet.create({
     marginTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
   },
   backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  refreshBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontWeight: '800', color: TEXT,fontSize: 18 },
   segment: {
     flexDirection: 'row',
@@ -190,38 +328,56 @@ const styles = StyleSheet.create({
   segTextInactive: { color: MUTED },
 
   item: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 10,
     borderWidth: 1,
     borderColor: BORDER,
     marginBottom: 12,
+    overflow: 'hidden',
   },
-  thumb: { width: 64, height: 64, borderRadius: 10, marginRight: 10 },
+  itemContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 10,
+  },
+  thumb: { width: 90, height: 90, borderRadius: 10, marginRight: 10 },
   itemTitle: { fontWeight: '700', color: TEXT },
-  placeText: { color: MUTED },
-  rangeText: { color: MUTED, marginTop: 2 },
+  placeText: { color: MUTED, fontSize: 12 },
+  rangeText: { color: MUTED, marginTop: 2, fontSize: 12 },
+  priceText: { color: GOLD, fontWeight: '600', marginTop: 2, fontSize: 12 },
   badge: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, marginLeft: 8 },
   badgeText: { fontWeight: '700', fontSize: 12 },
 
-  actionList: {
-    marginTop: 8,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: BORDER,
+  actionButtons: {
+    flexDirection: 'row',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: BORDER,
+    backgroundColor: '#FAFAFA',
   },
-  actionRow: {
+  actionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    height: 48,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: BORDER,
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
   },
-  actionLabel: { marginLeft: 10, color: TEXT, fontWeight: '600' },
+  actionButtonText: {
+    marginLeft: 6,
+    color: GOLD,
+    fontWeight: '600',
+    fontSize: 12,
+  },
+
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    color: MUTED,
+    fontSize: 16,
+  },
 
   emptyWrap: { flex: 1, alignItems: 'center', paddingTop: 30 },
   emptyImg: { width: 300, height: 220, resizeMode: 'contain' },
