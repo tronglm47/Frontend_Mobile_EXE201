@@ -2,12 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Alert,
   Image,
   Linking,
   Platform,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -19,7 +19,9 @@ import { getUserInfo } from '../apis/auth';
 import { BookingItem, fetchAllBookings, fetchLandlordPostById, LandlordPostItem, updateBookingStatus } from '../apis/posts';
 import EmptyBooking from '../components/illustrations/EmptyBooking';
 import LiveLocationTracker from '../components/LiveLocationTracker';
+ 
 import { getPostFromCache, setPostInCache } from '../lib/post-cache';
+import { handleUnauthorizedError, isUnauthorizedError } from '../utils/auth-utils';
 
 const GOLD = '#E0B100';
 const BORDER = '#E5E7EB';
@@ -42,8 +44,11 @@ export default function BookingScreen() {
       try {
         const me = await getUserInfo();
         if (me?.userID != null) setCurrentUserId(me.userID);
-      } catch (e) {
-        console.warn('Failed to load user info for tracking', e);
+      } catch (e: any) {
+        if (isUnauthorizedError(e)) {
+          await handleUnauthorizedError();
+        }
+        // Failed to load user info for tracking
       }
     })();
   }, []);
@@ -51,7 +56,7 @@ export default function BookingScreen() {
   const loadBookings = async () => {
     try {
       setLoading(true);
-      console.log('Loading bookings...');
+      // Loading bookings...
       
       // Check if user is authenticated
       const token = await AsyncStorage.getItem('authToken');
@@ -61,16 +66,13 @@ export default function BookingScreen() {
       }
       
       const data = await fetchAllBookings();
-      console.log('Bookings loaded:', data);
+      // Bookings loaded
       setBookings(data);
     } catch (error: any) {
-      console.error('Failed to load bookings:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
+      // Failed to load bookings
       
-      if (error?.status === 401) {
-        Alert.alert('Lỗi', 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-        // Optionally redirect to login
-        // router.replace('/(auth)/login');
+      if (isUnauthorizedError(error)) {
+        await handleUnauthorizedError();
       } else {
         Alert.alert('Lỗi', `Không thể tải danh sách lịch đặt: ${error?.message || String(error)}`);
       }
@@ -194,39 +196,62 @@ export default function BookingScreen() {
         {renderStatus(booking)}
       </TouchableOpacity>
       
-      {/* Action buttons integrated into the item */}
-      <View style={styles.actionButtons}>
+      {/* Action buttons grid (2 rows x 3 columns) */}
+      <View style={styles.actionGrid}>
         <TouchableOpacity 
-          style={styles.actionButton}
+          style={styles.gridButton}
           onPress={() => goContact(booking.landlordPhone || booking.renterPhone)}
         >
           <Ionicons name="call-outline" size={18} color={GOLD} />
-          <Text style={styles.actionButtonText}>Gọi</Text>
+          <Text style={styles.gridButtonText}>Gọi</Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
-          style={styles.actionButton}
+          style={styles.gridButton}
           onPress={() => goZalo(booking.landlordPhone || booking.renterPhone)}
         >
           <Ionicons name="chatbubble-outline" size={18} color="#0068FF" />
-          <Text style={[styles.actionButtonText, { color: '#0068FF' }]}>Zalo</Text>
+          <Text style={[styles.gridButtonText, { color: '#0068FF' }]}>Zalo</Text>
         </TouchableOpacity>
 
         {/* Track live location (for pending/confirmed bookings) */}
         {(booking.status?.toLowerCase() === 'pending' || booking.status?.toLowerCase() === 'confirmed') && (
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={styles.gridButton}
             onPress={() => setTrackingBookingId(booking.bookingId)}
           >
             <Ionicons name="navigate-outline" size={18} color="#1971c2" />
-            <Text style={[styles.actionButtonText, { color: '#1971c2' }]}>Theo dõi</Text>
+            <Text style={[styles.gridButtonText, { color: '#1971c2' }]}>Theo dõi</Text>
           </TouchableOpacity>
         )}
+
+        {/* Meeting point actions */}
+        {booking.status?.toLowerCase() !== 'completed' && (
+          !booking.meetingLatitude || !booking.meetingLongitude ? (
+            // No meeting set yet → show single "Đặt điểm hẹn"
+            <TouchableOpacity 
+              style={styles.gridButton}
+              onPress={() => router.push({ pathname: '/location-map', params: { bookingId: String(booking.bookingId) } })}
+            >
+              <Ionicons name="pin-outline" size={18} color="#c026d3" />
+              <Text style={[styles.gridButtonText, { color: '#c026d3' }]}>Đặt điểm hẹn</Text>
+            </TouchableOpacity>
+          ) : (
+            // Meeting exists → single "Đổi điểm hẹn" button
+            <TouchableOpacity 
+              style={styles.gridButton}
+              onPress={() => router.push({ pathname: '/location-map', params: { bookingId: String(booking.bookingId) } })}
+            >
+              <Ionicons name="create-outline" size={18} color="#7c3aed" />
+              <Text style={[styles.gridButtonText, { color: '#7c3aed' }]}>Đổi nơi hẹn</Text>
+            </TouchableOpacity>
+          )
+        )}
         
-        {/* Landlord quick complete */}
+        {/* Landlord quick complete (optional, may overflow grid; keep as part of 6 if space) */}
         {booking.status?.toLowerCase() !== 'completed' && booking.landlordId && (
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={styles.gridButton}
             disabled={updatingId === booking.bookingId}
             onPress={async () => {
               try {
@@ -240,30 +265,45 @@ export default function BookingScreen() {
                 setUpdatingId(booking.bookingId);
                 await updateBookingStatus(booking.bookingId, { status: 'completed', note });
                 await loadBookings();
-              } catch {
-                Alert.alert('Lỗi', 'Không thể cập nhật trạng thái');
+              } catch (error: any) {
+                if (isUnauthorizedError(error)) {
+                  await handleUnauthorizedError();
+                } else {
+                  Alert.alert('Lỗi', 'Không thể cập nhật trạng thái');
+                }
               } finally {
                 setUpdatingId(null);
               }
             }}
           >
             <Ionicons name="checkmark-done-outline" size={18} color="#059669" />
-            <Text style={[styles.actionButtonText, { color: '#059669' }]}>
+            <Text style={[styles.gridButtonText, { color: '#059669' }]}>
               {updatingId === booking.bookingId ? 'Đang lưu...' : 'Hoàn thành'}
             </Text>
           </TouchableOpacity>
         )}
 
+        {/* Cancel placeholder (API to be added later) */}
+        {(booking.status?.toLowerCase() === 'pending' || booking.status?.toLowerCase() === 'confirmed') && (
+          <TouchableOpacity 
+            style={styles.gridButton}
+            onPress={() => Alert.alert('Hủy lịch hẹn', 'API hủy sẽ được tích hợp khi bạn cung cấp.')}
+          >
+            <Ionicons name="close-circle-outline" size={18} color="#DC2626" />
+            <Text style={[styles.gridButtonText, { color: '#DC2626' }]}>Hủy</Text>
+          </TouchableOpacity>
+        )}
+
         {booking.status?.toLowerCase() === 'completed' && (
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={styles.gridButton}
             onPress={() => {
               // TODO: Implement rating functionality
               Alert.alert('Đánh giá', 'Chức năng đánh giá sẽ được triển khai');
             }}
           >
             <Ionicons name="star-outline" size={18} color="#F59E0B" />
-            <Text style={[styles.actionButtonText, { color: '#F59E0B' }]}>Đánh giá</Text>
+            <Text style={[styles.gridButtonText, { color: '#F59E0B' }]}>Đánh giá</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -305,7 +345,7 @@ export default function BookingScreen() {
         </ScrollView>
       )}
       {trackingBookingId != null && (
-        <View style={styles.overlay}>
+        <SafeAreaView style={styles.overlay}>
           <View style={styles.overlayHeader}>
             <TouchableOpacity onPress={() => setTrackingBookingId(null)} style={styles.backBtn}>
               <Ionicons name="close" size={22} color={TEXT} />
@@ -314,18 +354,25 @@ export default function BookingScreen() {
             <View style={styles.refreshBtn} />
           </View>
           <View style={{ flex: 1 }}>
+            {(() => {
+              const meetLat = selectedBooking?.meetingLatitude ?? 0;
+              const meetLng = selectedBooking?.meetingLongitude ?? 0;
+              const meetLabel = selectedBooking?.meetingAddress || selectedBooking?.placeMeet || 'Điểm hẹn';
+              return (
             <LiveLocationTracker
               bookingId={trackingBookingId}
               userId={currentUserId ?? undefined}
               otherUserLabel="Landlord"
-              //hardcoded tại đây
-              meetingLatitude={10.846739}
-              meetingLongitude={106.842652}
-              meetingLabel="Vinhomes Grand Park"
+              meetingLatitude={meetLat}
+              meetingLongitude={meetLng}
+              meetingLabel={meetLabel}
               enableSignalR={false}
             />
+              );
+            })()}
           </View>
-        </View>
+          {/* Removed manual distance tab */}
+        </SafeAreaView>
       )}
     </SafeAreaView>
   );
@@ -373,7 +420,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: BORDER,
-    marginTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
+    backgroundColor: '#fff',
   },
   backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   refreshBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
@@ -413,21 +460,25 @@ const styles = StyleSheet.create({
   badge: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, marginLeft: 8 },
   badgeText: { fontWeight: '700', fontSize: 12 },
 
-  actionButtons: {
+  actionGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: BORDER,
     backgroundColor: '#FAFAFA',
   },
-  actionButton: {
-    flex: 1,
+  gridButton: {
+    width: '33.3333%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
     paddingHorizontal: 8,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER,
   },
-  actionButtonText: {
+  gridButtonText: {
     marginLeft: 6,
     color: GOLD,
     fontWeight: '600',

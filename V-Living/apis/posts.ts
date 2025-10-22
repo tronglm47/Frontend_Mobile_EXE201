@@ -367,3 +367,29 @@ export async function updateBookingStatus(
     throw e;
   }
 }
+
+// Fetch a single booking by id (latest state from backend)
+export async function fetchBookingById(bookingId: number | string): Promise<BookingItem> {
+  return await api.get<BookingItem>(`Booking/${bookingId}`, true);
+}
+
+// Update booking (partial) to set meeting point address and coordinates
+export async function updateBooking(
+  bookingId: number | string,
+  payload: Partial<{
+    meetingTime: string;
+    placeMeet: string;
+    meetingAddress: string;
+    meetingLatitude: number;
+    meetingLongitude: number;
+    status: string;
+    note: string;
+  }>
+): Promise<{ message?: string } | undefined> {
+  try {
+    return await api.put<{ message?: string }>(`Booking/${bookingId}`, payload, true);
+  } catch (e) {
+    console.error('Failed to update booking (PUT /Booking/{id}):', e);
+    throw e;
+  }
+}

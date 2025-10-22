@@ -73,7 +73,24 @@ export default function FavoriteTab() {
             </TouchableOpacity>
           </TouchableOpacity>
         )}
-        ListEmptyComponent={<View style={{ padding: 24 }}><Text>Chưa có mục yêu thích</Text></View>}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIconContainer}>
+              <MaterialIcons name="favorite-border" size={64} color={GOLD} />
+            </View>
+            <Text style={styles.emptyTitle}>Chưa có mục yêu thích</Text>
+            <Text style={styles.emptySubtitle}>
+              Hãy khám phá và thêm những căn hộ bạn quan tâm vào danh sách yêu thích
+            </Text>
+            <TouchableOpacity 
+              style={styles.exploreButton}
+              onPress={() => router.push('/(tabs)')}
+            >
+              <MaterialIcons name="explore" size={20} color="#fff" />
+              <Text style={styles.exploreButtonText}>Khám phá ngay</Text>
+            </TouchableOpacity>
+          </View>
+        }
       />
     </SafeAreaView>
   );
@@ -102,6 +119,51 @@ const styles = StyleSheet.create({
   ratingBadgeText: { fontSize: 12, fontWeight: '700', color: '#fff' },
   heart: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F2F3F5', alignItems: 'center', justifyContent: 'center' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  // Empty state styles
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 64,
+  },
+  emptyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 32,
+  },
+  exploreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: GOLD,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  exploreButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });
 
 
