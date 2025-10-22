@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   Image,
+  Linking,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -11,13 +14,12 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Linking,
-  Alert,
 } from 'react-native';
+import { getUserInfo } from '../apis/auth';
+import { BookingItem, fetchAllBookings, fetchLandlordPostById, LandlordPostItem, updateBookingStatus } from '../apis/posts';
 import EmptyBooking from '../components/illustrations/EmptyBooking';
-import { fetchAllBookings, BookingItem, fetchLandlordPostById, LandlordPostItem, updateBookingStatus } from '../apis/posts';
+import LiveLocationTracker from '../components/LiveLocationTracker';
 import { getPostFromCache, setPostInCache } from '../lib/post-cache';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GOLD = '#E0B100';
 const BORDER = '#E5E7EB';
@@ -30,9 +32,20 @@ export default function BookingScreen() {
   const [loading, setLoading] = useState(true);
   const [postImageMap, setPostImageMap] = useState<Record<number, string>>({});
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [trackingBookingId, setTrackingBookingId] = useState<number | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
 
   useEffect(() => {
     loadBookings();
+    // Load user info for userId needed by LiveLocationTracker
+    (async () => {
+      try {
+        const me = await getUserInfo();
+        if (me?.userID != null) setCurrentUserId(me.userID);
+      } catch (e) {
+        console.warn('Failed to load user info for tracking', e);
+      }
+    })();
   }, []);
 
   const loadBookings = async () => {
@@ -150,6 +163,9 @@ export default function BookingScreen() {
     Linking.openURL(`https://zalo.me/${phone}`).catch(() => Alert.alert('Không thể mở Zalo'));
   };
 
+  // Selected booking for tracking overlay
+  const selectedBooking = trackingBookingId != null ? bookings.find(b => b.bookingId === trackingBookingId) : undefined;
+
   const renderItem = (booking: BookingItem) => (
     <View key={booking.bookingId} style={styles.item}>
       <TouchableOpacity 
@@ -195,11 +211,23 @@ export default function BookingScreen() {
           <Ionicons name="chatbubble-outline" size={18} color="#0068FF" />
           <Text style={[styles.actionButtonText, { color: '#0068FF' }]}>Zalo</Text>
         </TouchableOpacity>
+
+        {/* Track live location (for pending/confirmed bookings) */}
+        {(booking.status?.toLowerCase() === 'pending' || booking.status?.toLowerCase() === 'confirmed') && (
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => setTrackingBookingId(booking.bookingId)}
+          >
+            <Ionicons name="navigate-outline" size={18} color="#1971c2" />
+            <Text style={[styles.actionButtonText, { color: '#1971c2' }]}>Theo dõi</Text>
+          </TouchableOpacity>
+        )}
         
         {/* Landlord quick complete */}
         {booking.status?.toLowerCase() !== 'completed' && booking.landlordId && (
           <TouchableOpacity 
             style={styles.actionButton}
+            disabled={updatingId === booking.bookingId}
             onPress={async () => {
               try {
                 const note = await new Promise<string | undefined>((resolve) => {
@@ -212,7 +240,7 @@ export default function BookingScreen() {
                 setUpdatingId(booking.bookingId);
                 await updateBookingStatus(booking.bookingId, { status: 'completed', note });
                 await loadBookings();
-              } catch (e) {
+              } catch {
                 Alert.alert('Lỗi', 'Không thể cập nhật trạng thái');
               } finally {
                 setUpdatingId(null);
@@ -220,7 +248,9 @@ export default function BookingScreen() {
             }}
           >
             <Ionicons name="checkmark-done-outline" size={18} color="#059669" />
-            <Text style={[styles.actionButtonText, { color: '#059669' }]}>Hoàn thành</Text>
+            <Text style={[styles.actionButtonText, { color: '#059669' }]}>
+              {updatingId === booking.bookingId ? 'Đang lưu...' : 'Hoàn thành'}
+            </Text>
           </TouchableOpacity>
         )}
 
@@ -274,6 +304,29 @@ export default function BookingScreen() {
           <View style={{ height: 24 }} />
         </ScrollView>
       )}
+      {trackingBookingId != null && (
+        <View style={styles.overlay}>
+          <View style={styles.overlayHeader}>
+            <TouchableOpacity onPress={() => setTrackingBookingId(null)} style={styles.backBtn}>
+              <Ionicons name="close" size={22} color={TEXT} />
+            </TouchableOpacity>
+            <Text style={styles.overlayTitle}>Theo dõi vị trí</Text>
+            <View style={styles.refreshBtn} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <LiveLocationTracker
+              bookingId={trackingBookingId}
+              userId={currentUserId ?? undefined}
+              otherUserLabel="Landlord"
+              //hardcoded tại đây
+              meetingLatitude={10.846739}
+              meetingLongitude={106.842652}
+              meetingLabel="Vinhomes Grand Park"
+              enableSignalR={false}
+            />
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -300,6 +353,18 @@ function EmptyState() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
+  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#fff' },
+  overlayHeader: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: BORDER,
+    backgroundColor: '#fff',
+  },
+  overlayTitle: { fontWeight: '800', color: TEXT, fontSize: 18 },
   header: {
     height: 56,
     flexDirection: 'row',
