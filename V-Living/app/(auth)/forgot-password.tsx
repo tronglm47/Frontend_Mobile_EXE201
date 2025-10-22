@@ -7,10 +7,9 @@ export default function ForgotPasswordScreen() {
     router.back();
   };
 
-  const handleNext = (method: 'phone' | 'email') => {
-    console.log('Selected method:', method);
-    // Navigate to verification screen
-    router.push('/verify-email' as any);
+  const handleNext = (email: string) => {
+    // Navigate to reset password screen with email parameter
+    router.push({ pathname: '/reset-password', params: { email } } as any);
   };
 
   return (

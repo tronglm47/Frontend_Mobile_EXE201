@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { Alert, LogBox } from 'react-native';
+import { handleUnauthorizedError } from '../utils/auth-utils';
 
 function resolveBaseUrl(): string | undefined {
   // Prefer EXPO_PUBLIC_* at runtime (works in all builds)
@@ -34,6 +36,13 @@ export async function request<T>(
     headers?: Record<string, string>;
   } = {}
 ): Promise<T> {
+  // Suppress noisy yellow box and console warnings globally (optional)
+  try {
+    LogBox.ignoreLogs([
+      '[LocationAPI] getTrackingHistory',
+      'Warning: ...',
+    ]);
+  } catch {}
   const root = (baseUrl || '').replace(/\/+$/, '');
   const rel = path.replace(/^\/+/, '');
   const url = path.startsWith('http') ? path : `${root}/${rel}`;
@@ -67,8 +76,17 @@ export async function request<T>(
     const msg = (data && (data.message || data.error || data.title)) || `HTTP ${res.status}`;
     const err: any = new Error(msg);
     err.status = res.status;
+    err.statusCode = res.status; // Add statusCode for compatibility
     err.data = data;
     err.errors = (data && (data.errors || data.modelState)) || undefined;
+    if (res.status === 401) {
+      try {
+        Alert.alert('Vui lòng đăng nhập lại', 'Phiên đăng nhập đã hết hạn');
+      } catch {}
+      try {
+        await handleUnauthorizedError();
+      } catch {}
+    }
     throw err;
   }
 

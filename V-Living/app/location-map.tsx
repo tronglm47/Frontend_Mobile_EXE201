@@ -1,70 +1,53 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, TextInput, FlatList, Alert } from 'react-native';
-import { router } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useLocalSearchParams } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Location from 'expo-location';
-import { Colors } from '@/constants/theme';
 import { useLocation } from './location-context';
+import MapView, { Marker, UrlTile } from 'react-native-maps';
+import { searchPlaces as nominatimSearch, reverseGeocode, PlaceResult } from '@/services/nominatim';
+import { updateMeetPoint } from '@/services/location';
+import { updateBooking } from '@/apis/posts';
 
-interface SearchResult {
-  place_id: string;
-  description: string;
-  formatted_address: string;
-}
+interface SearchResult extends PlaceResult {}
 
 export default function LocationMap() {
   const { setSelectedLocation } = useLocation();
+  const params = useLocalSearchParams<{ bookingId?: string }>();
   const [selectedAddress, setSelectedAddress] = useState('');
+  const [region, setRegion] = useState({ latitude: 10.8412, longitude: 106.8098, latitudeDelta: 0.02, longitudeDelta: 0.02 });
+  const [pin, setPin] = useState<{ latitude: number; longitude: number } | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const MAPTILER_KEY = process.env.EXPO_PUBLIC_MAPTILER_KEY;
+  const tileUrl = MAPTILER_KEY
+    ? `https://api.maptiler.com/maps/streets/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`
+    : undefined;
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     if (searchQuery.length > 2) {
-      searchPlaces(searchQuery);
+      debounceRef.current = setTimeout(() => {
+        searchPlaces(searchQuery);
+      }, 350);
     } else {
       setSearchResults([]);
       setShowResults(false);
     }
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, [searchQuery]);
 
   const searchPlaces = async (query: string) => {
     try {
       setLoading(true);
-      // Mock search results - trong thực tế sẽ gọi Google Places API
-      const mockResults: SearchResult[] = [
-        {
-          place_id: '1',
-          description: 'Tòa nhà S702, Đại học Quốc gia TP.HCM',
-          formatted_address: 'Tòa nhà S702, Đại học Quốc gia TP.HCM, Quận Thủ Đức, TP Hồ Chí Minh'
-        },
-        {
-          place_id: '2', 
-          description: 'NVH Sinh viên, Đại học Quốc gia TP.HCM',
-          formatted_address: 'NVH Sinh viên, Đại học Quốc gia TP.HCM, Quận Thủ Đức, TP Hồ Chí Minh'
-        },
-        {
-          place_id: '3',
-          description: 'S10 Vinhomes Grand Park',
-          formatted_address: 'S10 Vinhomes Grand Park, Quận 9, TP Hồ Chí Minh'
-        },
-        {
-          place_id: '4',
-          description: 'Origami S10.02',
-          formatted_address: 'Origami S10.02, Vinhomes Grand Park, Quận 9, TP Hồ Chí Minh'
-        },
-        {
-          place_id: '5',
-          description: 'Beverly B2',
-          formatted_address: 'Beverly B2, Vinhomes Grand Park, Quận 9, TP Hồ Chí Minh'
-        }
-      ].filter(result => 
-        result.description.toLowerCase().includes(query.toLowerCase()) ||
-        result.formatted_address.toLowerCase().includes(query.toLowerCase())
-      );
-
-      setSearchResults(mockResults);
+      const results = await nominatimSearch(query);
+      setSearchResults(results);
       setShowResults(true);
     } catch (error) {
       console.error('Search error:', error);
@@ -77,6 +60,8 @@ export default function LocationMap() {
     setSelectedAddress(result.formatted_address);
     setSearchQuery(result.description);
     setShowResults(false);
+    setRegion({ latitude: result.latitude, longitude: result.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 });
+    setPin({ latitude: result.latitude, longitude: result.longitude });
   };
 
   const handleSelect = () => {
@@ -85,10 +70,31 @@ export default function LocationMap() {
       return;
     }
 
+    const coords = pin ?? { latitude: region.latitude, longitude: region.longitude };
+
+    // If coming from booking flow, update booking via PUT /Booking/{id}
+    if (params.bookingId) {
+      (async () => {
+        try {
+          await updateBooking(params.bookingId as string, {
+            meetingAddress: selectedAddress,
+            meetingLatitude: coords.latitude,
+            meetingLongitude: coords.longitude,
+          });
+          Alert.alert('Đã lưu vị trí hẹn', 'Điểm hẹn đã được cập nhật thành công');
+          router.back();
+        } catch (e: any) {
+          Alert.alert('Lỗi', e?.message || 'Không thể lưu vị trí hẹn');
+        }
+      })();
+      return;
+    }
+
     const locationData = {
       address: selectedAddress,
-      district: selectedAddress.includes('Quận 9') ? 'Quận 9' : 'Quận Thủ Đức',
-      city: 'TP Hồ Chí Minh'
+      district: '—',
+      city: 'TP Hồ Chí Minh',
+      coordinates: coords,
     };
     setSelectedLocation(locationData);
     router.replace('/(tabs)');
@@ -143,53 +149,54 @@ export default function LocationMap() {
         </View>
       )}
 
-      {/* Map Interface */}
+      {/* Map Interface (OSM tiles) */}
       <View style={styles.mapContainer}>
-        <View style={styles.map}>
-          {/* Map Labels */}
-          <View style={[styles.mapLabel, { top: 60, left: 40 }]}>
-            <MaterialIcons name="place" size={16} color="#9BA1A6" />
-            <Text style={styles.labelText}>Toà S10.02 Origami</Text>
+        <MapView
+          style={styles.map}
+          region={region}
+          onRegionChangeComplete={(r) => setRegion(r)}
+          onPress={async (e) => {
+            const { latitude, longitude } = e.nativeEvent.coordinate;
+            setPin({ latitude, longitude });
+            const addr = await reverseGeocode(latitude, longitude);
+            if (addr) setSelectedAddress(addr);
+          }}
+        >
+          {/* Tile overlay - MapTiler (free tier) */}
+          {tileUrl ? (
+            <UrlTile urlTemplate={tileUrl} maximumZ={19} flipY={false} />
+          ) : null}
+          {pin && (
+            <Marker
+              coordinate={pin}
+              draggable
+              onDragEnd={async (e) => {
+                const { latitude, longitude } = e.nativeEvent.coordinate;
+                setPin({ latitude, longitude });
+                const addr = await reverseGeocode(latitude, longitude);
+                if (addr) setSelectedAddress(addr);
+              }}
+            />
+          )}
+        </MapView>
+        {!tileUrl && (
+          <View style={styles.tileWarning}>
+            <Text style={styles.tileWarningText}>
+              Cần cấu hình EXPO_PUBLIC_MAPTILER_KEY để hiển thị bản đồ chi tiết.
+            </Text>
           </View>
-          
-          <View style={[styles.mapLabel, { top: 100, right: 60 }]}>
-            <Text style={styles.labelText}>Origami - S10.07</Text>
-          </View>
-          
-          <View style={[styles.mapLabel, { bottom: 140, left: 20 }]}>
-            <Text style={styles.labelText}>Wallace Vinhomes Grand Park</Text>
-          </View>
-          
-          <View style={[styles.mapLabel, { bottom: 100, right: 80 }]}>
-            <MaterialIcons name="restaurant" size={16} color="#FF8C00" />
-            <Text style={styles.labelText}>Fried Chicken</Text>
-          </View>
-          
-          <View style={[styles.mapLabel, { bottom: 60, left: 100 }]}>
-            <MaterialIcons name="local-cafe" size={16} color="#FF8C00" />
-            <Text style={styles.labelText}>Trà Sữa The Shan Cha</Text>
-          </View>
-          
-          {/* Central Location Pin */}
-          <View style={styles.centralPin}>
-            <View style={styles.pinIcon}>
-              <MaterialIcons name="place" size={24} color="#fff" />
-            </View>
-          </View>
-        </View>
-        
-        {/* Address Selection Dialog */}
+        )}
+        {/* Address Selection */}
         <View style={styles.addressDialog}>
           <View style={styles.addressHeader}>
             <Text style={styles.addressTitle}>Địa chỉ</Text>
           </View>
-          
           <View style={styles.addressContent}>
             <View style={styles.addressIcon}>
               <MaterialIcons name="place" size={16} color="#fff" />
             </View>
             <Text style={styles.addressText}>
-              {selectedAddress || 'Chọn địa chỉ từ danh sách bên trên'}
+              {selectedAddress || 'Kéo thả ghim để chọn vị trí chính xác'}
             </Text>
           </View>
         </View>
@@ -376,5 +383,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9BA1A6',
     lineHeight: 20,
+  },
+  tileWarning: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    right: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 8,
+    padding: 8,
+  },
+  tileWarningText: {
+    fontSize: 12,
+    color: '#111',
   },
 });

@@ -327,7 +327,7 @@ export default function DetailScreen() {
           post={post}
           onSuccess={() => {
             // Optional: Show success message or navigate
-            console.log('Booking successful!');
+            // Booking successful
           }}
         />
       )}
