@@ -7,19 +7,59 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { forgotPassword } from '@/apis/auth';
+import Toast from '@/components/Toast';
 
 interface ForgotPasswordProps {
   onBack?: () => void;
-  onNext?: (method: 'phone' | 'email') => void;
+  onNext?: (email: string) => void;
 }
 
 export default function ForgotPassword({ onBack, onNext }: ForgotPasswordProps) {
-  const [selectedMethod, setSelectedMethod] = useState<'phone' | 'email'>('email');
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('info');
 
-  const handleNext = () => {
-    onNext?.(selectedMethod);
+  const showToastMessage = (message: string, type: 'success' | 'error' | 'info') => {
+    setToastMessage(message);
+    setToastType(type);
+    setShowToast(true);
+  };
+
+  const handleSendEmail = async () => {
+    if (!email.trim()) {
+      showToastMessage('Vui lòng nhập email của bạn', 'error');
+      return;
+    }
+
+    if (!email.includes('@')) {
+      showToastMessage('Vui lòng nhập email hợp lệ', 'error');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await forgotPassword({ email: email.trim() });
+      
+      showToastMessage('Mã xác thực đã được gửi đến email của bạn', 'success');
+      
+      // Navigate to reset password screen after showing toast
+      setTimeout(() => {
+        onNext?.(email.trim());
+      }, 1500);
+      
+    } catch (error: any) {
+      console.error('Forgot password error:', error);
+      showToastMessage(error?.message || 'Có lỗi xảy ra. Vui lòng thử lại.', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -32,62 +72,60 @@ export default function ForgotPassword({ onBack, onNext }: ForgotPasswordProps) 
       
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+1        <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#000000" />
         </TouchableOpacity>
         <Text style={styles.title}>Quên Mật Khẩu</Text>
+        <View style={{ width: 36 }} />
+      </View>
+      
+      {/* Subtitle */}
+      <View style={styles.subtitleContainer}>
         <Text style={styles.subtitle}>
-          Chọn thông tin liên hệ mà bạn muốn chúng tôi sử dụng để đặt lại mật khẩu
+          Nhập email của bạn để nhận mã xác thực đặt lại mật khẩu
         </Text>
       </View>
 
-      {/* Contact Options */}
-      <View style={styles.optionsContainer}>
-        {/* Phone Option */}
-        <TouchableOpacity
-          style={[
-            styles.optionCard,
-            selectedMethod === 'phone' && styles.selectedCard
-          ]}
-          onPress={() => setSelectedMethod('phone')}
-        >
-          <View style={styles.optionContent}>
-            <View style={[styles.iconContainer, { backgroundColor: '#E8E8FF' }]}>
-              <Ionicons name="call" size={24} color="#E0B100" />
-            </View>
-            <View style={styles.optionText}>
-              <Text style={styles.optionTitle}>Điện thoại</Text>
-              <Text style={styles.optionValue}>+84 34 -5***488-65</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Email Option */}
-        <TouchableOpacity
-          style={[
-            styles.optionCard,
-            selectedMethod === 'email' && styles.selectedCard
-          ]}
-          onPress={() => setSelectedMethod('email')}
-        >
-          <View style={styles.optionContent}>
-            <View style={[styles.iconContainer, { backgroundColor: '#E8E8FF' }]}>
-              <Ionicons name="mail" size={24} color="#E0B100" />
-            </View>
-            <View style={styles.optionText}>
-              <Text style={styles.optionTitle}>Email</Text>
-              <Text style={styles.optionValue}>lem***@gmail.com</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
+      {/* Email Input */}
+      <View style={styles.inputContainer}>
+        <View style={styles.inputWrapper}>
+          <Ionicons name="mail" size={20} color="#666666" style={styles.inputIcon} />
+          <TextInput
+            style={styles.input}
+            placeholder="Nhập email của bạn"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!loading}
+          />
+        </View>
       </View>
 
-      {/* Next Button */}
+      {/* Send Button */}
       <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-          <Text style={styles.nextButtonText}>Tiếp theo</Text>
+        <TouchableOpacity 
+          style={[
+            styles.sendButton,
+            (!email.trim() || loading) && styles.sendButtonDisabled
+          ]} 
+          onPress={handleSendEmail}
+          disabled={!email.trim() || loading}
+        >
+          <Text style={styles.sendButtonText}>
+            {loading ? 'Đang gửi...' : 'Gửi mã xác thực'}
+          </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Toast */}
+      <Toast
+        visible={showToast}
+        message={toastMessage}
+        type={toastType}
+        onHide={() => setShowToast(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -98,32 +136,47 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 10 : 0,
-    paddingBottom: 30,
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+    marginTop: 0,
+    backgroundColor: '#fff',
   },
   backButton: {
-    marginBottom: 20,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  subtitleContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 20,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#000000',
-    marginBottom: 12,
+    fontWeight: '800',
+    fontSize: 18,
+    color: '#111827',
   },
   subtitle: {
     fontSize: 16,
     color: '#666666',
     lineHeight: 22,
   },
-  optionsContainer: {
+  inputContainer: {
     paddingHorizontal: 20,
-    gap: 16,
+    marginBottom: 30,
   },
-  optionCard: {
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#ffffff',
     borderRadius: 12,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     borderWidth: 1,
     borderColor: '#E0E0E0',
     shadowColor: '#000',
@@ -135,48 +188,30 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  selectedCard: {
-    borderColor: '#E0B100',
-    borderWidth: 2,
+  inputIcon: {
+    marginRight: 12,
   },
-  optionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  optionText: {
+  input: {
     flex: 1,
-  },
-  optionTitle: {
-    fontSize: 16,
-    color: '#666666',
-    marginBottom: 4,
-  },
-  optionValue: {
     fontSize: 16,
     color: '#000000',
-    fontWeight: '500',
   },
   buttonContainer: {
     paddingHorizontal: 20,
     paddingBottom: 30,
     marginTop: 'auto',
   },
-  nextButton: {
+  sendButton: {
     backgroundColor: '#E0B100',
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  nextButtonText: {
+  sendButtonDisabled: {
+    backgroundColor: '#E0E0E0',
+  },
+  sendButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#ffffff',

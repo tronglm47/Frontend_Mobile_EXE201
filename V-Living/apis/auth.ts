@@ -99,3 +99,22 @@ export async function getUserInfo(): Promise<UserInfo> {
   const data = await api.get<UserInfo>('Auth/userinfo', true);
   return data;
 }
+
+// Forgot password - send reset code to email
+export type ForgotPasswordBody = {
+  email: string;
+};
+
+export async function forgotPassword(body: ForgotPasswordBody): Promise<void> {
+  await api.post('Auth/forgot-password', body);
+}
+
+// Reset password with token and new password
+export type ResetPasswordBody = {
+  token: string;
+  newPassword: string;
+};
+
+export async function resetPassword(body: ResetPasswordBody): Promise<void> {
+  await api.post('Auth/reset-password', body);
+}
