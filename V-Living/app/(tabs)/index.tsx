@@ -1,4 +1,4 @@
-import { Colors, Fonts } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import React from 'react';
@@ -16,6 +16,7 @@ import { useRecentViewed } from '../recent-viewed-context';
 import { LISTINGS } from '../listings';
 import { useLocation } from '../location-context';
 import NotificationsScreen from '../notifications';
+import { fetchSubscriptionPlans, SubscriptionPlan } from '../../apis/subscription';
 
 const IMG = (seed: string, w = 600, h = 400) =>
   `https://picsum.photos/seed/${seed}/${w}/${h}`; // legacy; avoid using for Trending
@@ -128,7 +129,7 @@ export default function HomeTab() {
 
       <SearchBar onFilterPress={openFilter} />
 
-      <PromoBanner />
+      <SubscriptionPlansBanner />
 
       <TrendingSection goDetail={goDetail} isFav={isFav} toggleFav={toggle} refreshKey={refreshKey} initialPosts={preTrending || undefined} buildingsMap={preBuildingsMap} />
 
@@ -211,14 +212,64 @@ function SearchBar({ onFilterPress }: { onFilterPress: () => void }) {
   );
 }
 
-function PromoBanner() {
+function SubscriptionPlansBanner() {
+  const [plans, setPlans] = React.useState<SubscriptionPlan[]>([]);
+
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await fetchSubscriptionPlans();
+        if (mounted) setPlans(data || []);
+      } catch {
+        if (mounted) setPlans([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const displayPlans = (plans || []).filter((p) => String(p.id) !== '0');
+  if (displayPlans.length === 0) return null;
+
+  const getPlanImage = (id: string | number) => {
+    const pid = Number(id);
+    try {
+      if (pid === 1) return require('../../assets/images/plan1.jpg');
+    } catch {}
+    try {
+      if (pid === 2) return require('../../assets/images/plan2.jpg');
+    } catch {}
+    try {
+      if (pid === 3) return require('../../assets/images/plan3.jpg');
+    } catch {}
+    return undefined as any;
+  };
+
   return (
-    <View style={styles.banner}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.bannerTitle}>Nhận ngay hoàn tiền 20%</Text>
-        <Text style={styles.bannerSub}>Hết hạn 25/08/2025</Text>
-      </View>
-      <Image source={{ uri: IMG('banner', 200, 140) }} style={styles.bannerImg} contentFit="cover" />
+    <View style={{ marginTop: 16 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingRight: 6 }}>
+        {displayPlans.map((p) => {
+          const img = getPlanImage(p.id);
+          return (
+            <TouchableOpacity
+              key={String(p.id)}
+              activeOpacity={0.9}
+              style={styles.imageCard}
+              onPress={() => router.push({ pathname: '/subscribe', params: { planId: String(p.id), planName: p.name } } as any)}
+            >
+              {img ? (
+                <Image source={img} style={styles.imageFill} contentFit="cover" />
+              ) : (
+                <View style={[styles.imageFill, { backgroundColor: '#F2F3F5' }]} />
+              )}
+              {p.badge ? (
+                <View style={styles.planBadge}><Text style={styles.planBadgeText}>{p.badge}</Text></View>
+              ) : null}
+              <View style={styles.imageLabelWrap}><Text style={styles.imageLabel} numberOfLines={1}>{p.name.replace(/\(.*?\)/g, '').trim()}</Text></View>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
@@ -643,10 +694,21 @@ const styles = StyleSheet.create({
   searchWrap: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F2F3F5', borderRadius: 12, paddingHorizontal: 12, height: 44 },
   searchInput: { flex: 1, fontSize: 14 },
 
-  banner: { marginTop: 16, flexDirection: 'row', alignItems: 'center', backgroundColor: '#5E49FF', borderRadius: 14, padding: 14, overflow: 'hidden' },
-  bannerTitle: { color: '#fff', fontSize: 16, fontWeight: '800' as const, fontFamily: Fonts.rounded },
-  bannerSub: { color: '#EDEAFF', fontSize: 12, marginTop: 6 },
-  bannerImg: { width: 110, height: 80, borderRadius: 10, marginLeft: 8 },
+  plansWrap: { },
+  plansTagline: { },
+  plansScrollContent: { },
+  planCard: { width: 220, minHeight: 110, borderRadius: 12, backgroundColor: '#FFFFFF', padding: 12, justifyContent: 'space-between', borderWidth: 1.5, borderColor: '#E0B100', overflow: 'hidden' },
+  planTitle: { color: '#1F2937', fontSize: 15, fontWeight: '800' as const },
+  planPrice: { color: '#8A6A00', fontSize: 12, marginTop: 2 },
+  planCta: { alignSelf: 'flex-start', backgroundColor: '#E0B100', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, marginTop: 8 },
+  planCtaText: { color: '#fff', fontSize: 12, fontWeight: '700' as const },
+  planBadge: { position: 'absolute', top: 8, right: 8, backgroundColor: '#E0B100', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  planBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' as const },
+  planImage: { position: 'absolute', right: -10, bottom: -10, width: 120, height: 90, borderRadius: 10, opacity: 0.95 },
+  imageCard: { width: 320, height: 150, borderRadius: 0, overflow: 'hidden', backgroundColor: '#fff' },
+  imageFill: { width: '100%', height: '100%' },
+  imageLabelWrap: { position: 'absolute', left: 10, bottom: 10, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  imageLabel: { color: '#fff', fontWeight: '800' as const, fontSize: 12, maxWidth: 200 },
 
   sectionHeader: { marginTop: 8, marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 16, fontWeight: '700' as const },
