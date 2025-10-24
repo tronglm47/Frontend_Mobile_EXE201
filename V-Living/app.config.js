@@ -1,34 +1,37 @@
+import "dotenv/config";
 
-{
+export default {
   "expo": {
     "name": "V-Living",
     "slug": "V-Living",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/Logo Icons.png",
     "scheme": "vliving",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true,
-      "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "V-Living uses your location to share your position in real-time during a booking meeting.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "V-Living uses your location to share your position in real-time during a booking meeting."
-      }
+      "supportsTablet": true
     },
     "android": {
+      "package": "com.vliving.app",
+      "versionCode": 1,
+      "displayName": "V-Living",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "foregroundImage": "./assets/images/Logo Icons.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "monochromeImage": "./assets/images/Logo Icons.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET"
       ]
     },
     "web": {
@@ -51,7 +54,10 @@
       ]
     ],
     "extra": {
-      "apiBaseUrl": "process.env.API_BASE_URL"
+      "apiBaseUrl": process.env.EXPO_PUBLIC_API_BASE_URL,
+      "eas": {
+        "projectId": "1415ee34-5936-42c5-9618-0a48b7301884"
+      }
     },
     "experiments": {
       "typedRoutes": true,
