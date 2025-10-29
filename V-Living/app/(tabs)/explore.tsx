@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, Platform, StatusBar, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, Platform, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -7,6 +7,7 @@ import Toast from '@/components/Toast';
 import { Colors } from '@/constants/theme';
 import { fetchUtilities, fetchBuildings, fetchBuildingsPage, createLandlordPostWithImages, createUserPost, Utility, Building, LandlordPostBody, UserPostBody } from '@/apis/posts';
 import { router } from 'expo-router';
+import { LoadingScreen } from '@/components/loading-screen';
 
 export default function CreatePostTab() {
   const [utilities, setUtilities] = useState<Utility[]>([]);
@@ -154,13 +155,7 @@ export default function CreatePostTab() {
   };
 
   if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color="#E0B100" />
-        </View>
-      </SafeAreaView>
-    );
+    return <LoadingScreen />;
   }
 
   return (

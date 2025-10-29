@@ -9,6 +9,9 @@ import { FavoritesProvider } from './favorites-context';
 import { LocationProvider } from './location-context';
 import { RecentViewedProvider } from './recent-viewed-context';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import React from 'react';
+import Toast from '@/components/Toast';
+import { onGlobalToast } from '@/utils/toast';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -16,6 +19,18 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const [toastVisible, setToastVisible] = React.useState(false);
+  const [toastMessage, setToastMessage] = React.useState('');
+  const [toastType, setToastType] = React.useState<'success' | 'error' | 'info'>('info');
+
+  React.useEffect(() => {
+    const off = onGlobalToast(({ message, type }) => {
+      setToastMessage(message);
+      setToastType(type);
+      setToastVisible(true);
+    });
+    return off;
+  }, []);
 
   return (
 
@@ -50,6 +65,7 @@ export default function RootLayout() {
       </LocationProvider>
       </FavoritesProvider>
       </SafeAreaProvider>
+      <Toast visible={toastVisible} message={toastMessage} type={toastType} onHide={() => setToastVisible(false)} />
       <StatusBar style="auto" />
     </ThemeProvider>
   );

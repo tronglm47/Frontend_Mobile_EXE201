@@ -8,16 +8,19 @@ import { router } from 'expo-router';
 import { useFavorites } from '../favorites-context';
 import { fetchAllLandlordPosts, fetchBuildings, Building } from '@/apis/posts';
 import { setPostsInCache, prefetchImages } from '@/lib/post-cache';
+import { LoadingScreen } from '@/components/loading-screen';
 
 const IMG = (seed: string, w = 600, h = 400) => `https://picsum.photos/seed/${seed}/${w}/${h}`;
 
 export default function FavoriteTab() {
   const { favorites, toggle } = useFavorites();
   const [items, setItems] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
     let mounted = true;
     (async () => {
+      setLoading(true);
       try {
         const [posts, buildings] = await Promise.all([fetchAllLandlordPosts(), fetchBuildings()]);
         if (!mounted) return;
@@ -38,10 +41,14 @@ export default function FavoriteTab() {
         await prefetchImages(mapped.map(m => m.image).filter(Boolean));
       } catch {
         setItems([]);
-      }
+      } finally { setLoading(false); }
     })();
     return () => { mounted = false; };
   }, [favorites]);
+
+  if (loading) {
+    return <LoadingScreen />;
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
