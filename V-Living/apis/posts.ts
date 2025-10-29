@@ -260,6 +260,9 @@ export type BookingItem = {
   meetingAddress?: string;
   meetingLatitude?: number;
   meetingLongitude?: number;
+  // Completion timestamps (present in some Booking/{id} responses)
+  renterCompletedAt?: string | null;
+  landlordCompletedAt?: string | null;
 };
 
 export type MyBookingsResponse = {
@@ -361,9 +364,12 @@ export async function updateBookingStatus(
   params: { status: string; note?: string }
 ): Promise<{ message?: string }> {
   try {
-    return await api.put<{ message?: string }>(`Booking/${bookingId}/status`, params, true);
+    console.log('[API] updateBookingStatus ->', { bookingId, params });
+    const res = await api.put<{ message?: string }>(`Booking/${bookingId}/status`, params, true);
+    console.log('[API] updateBookingStatus <-', { bookingId, response: res });
+    return res;
   } catch (e) {
-    console.error('Failed to update booking status:', e);
+    console.error('[API] updateBookingStatus error:', e);
     throw e;
   }
 }

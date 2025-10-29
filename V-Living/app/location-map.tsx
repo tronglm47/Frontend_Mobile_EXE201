@@ -1,22 +1,21 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import * as Location from 'expo-location';
-import { useLocation } from './location-context';
-import MapView, { Marker, UrlTile } from 'react-native-maps';
-import { searchPlaces as nominatimSearch, reverseGeocode, PlaceResult } from '@/services/nominatim';
-import { updateMeetPoint } from '@/services/location';
 import { updateBooking } from '@/apis/posts';
+import { searchPlaces as nominatimSearch, PlaceResult, reverseGeocode } from '@/services/nominatim';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, UrlTile } from 'react-native-maps';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocation } from './location-context';
 
-interface SearchResult extends PlaceResult {}
+type SearchResult = PlaceResult;
 
 export default function LocationMap() {
   const { setSelectedLocation } = useLocation();
   const params = useLocalSearchParams<{ bookingId?: string }>();
   const [selectedAddress, setSelectedAddress] = useState('');
-  const [region, setRegion] = useState({ latitude: 10.8412, longitude: 106.8098, latitudeDelta: 0.02, longitudeDelta: 0.02 });
+  // Default center near Vinhomes Grand Park, Thu Duc, HCMC
+  const [region, setRegion] = useState({ latitude: 10.8426, longitude: 106.8297, latitudeDelta: 0.02, longitudeDelta: 0.02 });
   const [pin, setPin] = useState<{ latitude: number; longitude: number } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const MAPTILER_KEY = process.env.EXPO_PUBLIC_MAPTILER_KEY;

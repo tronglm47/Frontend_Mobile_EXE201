@@ -1,8 +1,9 @@
+import { LoadingScreen } from '@/components/loading-screen';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -15,10 +16,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { getUserInfo } from '../apis/auth';
 import { BookingItem, fetchAllBookings, fetchLandlordPostById, LandlordPostItem, updateBookingStatus } from '../apis/posts';
 import EmptyBooking from '../components/illustrations/EmptyBooking';
-import { LoadingScreen } from '@/components/loading-screen';
 import LiveLocationTracker from '../components/LiveLocationTracker';
  
 import { getPostFromCache, setPostInCache } from '../lib/post-cache';
@@ -37,6 +38,10 @@ export default function BookingScreen() {
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [trackingBookingId, setTrackingBookingId] = useState<number | null>(null);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  // Prevent duplicate background sync PUTs for the same booking in a single session
+  const syncedRef = useRef<Set<number>>(new Set());
+  // Mark bookings that this client has completed (optimistic UI until API list reflects timestamps)
+  const clientCompletedRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     loadBookings();
@@ -54,6 +59,14 @@ export default function BookingScreen() {
     })();
   }, []);
 
+  // Reload bookings whenever this screen regains focus (e.g., after setting meeting point)
+  useFocusEffect(
+    React.useCallback(() => {
+      // Avoid duplicate to initial mount is acceptable; ensures fresh data
+      loadBookings();
+    }, [])
+  );
+
   const loadBookings = async () => {
     try {
       setLoading(true);
@@ -69,6 +82,36 @@ export default function BookingScreen() {
       const data = await fetchAllBookings();
       // Bookings loaded
       setBookings(data);
+      // Opportunistic server sync: if both parties completed but backend status isn't Completed, update it
+      try {
+        setTimeout(() => {
+          data.forEach((b) => {
+            const rc = (b as any).renterCompletedAt as string | null | undefined;
+            const lc = (b as any).landlordCompletedAt as string | null | undefined;
+            const normalized = (b.status || '').toLowerCase();
+            if (rc && lc && normalized !== 'completed' && normalized !== 'complete') {
+              if (!syncedRef.current.has(b.bookingId)) {
+                syncedRef.current.add(b.bookingId);
+                console.log('[Booking][AutoSync] Force status to Completed due to both completed timestamps', {
+                  bookingId: b.bookingId,
+                  renterCompletedAt: rc,
+                  landlordCompletedAt: lc,
+                  currentStatus: b.status,
+                });
+                updateBookingStatus(b.bookingId, { status: 'Completed' })
+                  .then((res) => {
+                    console.log('[Booking][AutoSync] Completed sync success', { bookingId: b.bookingId, res });
+                  })
+                  .catch((err) => {
+                    console.error('[Booking][AutoSync] Completed sync failed', { bookingId: b.bookingId, err });
+                  // if failed, allow retry on next load
+                    try { syncedRef.current.delete(b.bookingId); } catch {}
+                  });
+              }
+            }
+          });
+        }, 0);
+      } catch {}
     } catch (error: any) {
       // Failed to load bookings
       
@@ -82,20 +125,52 @@ export default function BookingScreen() {
     }
   };
 
-  // Filter bookings by status (case insensitive)
-  const upcoming = bookings.filter(b => b.status?.toLowerCase() === 'pending');
-  const completed = bookings.filter(b => b.status?.toLowerCase() === 'completed');
-  const canceled = bookings.filter(b => b.status?.toLowerCase() === 'cancelled');
+  // Normalize and derive booking status from fields
+  const normalizeStatus = (s?: string): string => {
+    const v = (s || '').toLowerCase();
+    if (v === 'complete' || v === 'completed') return 'completed';
+    if (v === 'cancelled' || v === 'canceled') return 'cancelled';
+    if (v === 'confirm' || v === 'confirmed') return 'confirmed';
+    if (v === 'pending') return 'pending';
+    return v || 'pending';
+  };
+
+  const getDerivedStatus = (b: BookingItem): string => {
+    const rc = (b as any).renterCompletedAt as string | null | undefined;
+    const lc = (b as any).landlordCompletedAt as string | null | undefined;
+    const bothDone = !!rc && !!lc;
+    if (bothDone) return 'completed';
+
+    // Identify current user role to compute who completed
+    const meIsRenter = currentUserId != null && b.renterId === currentUserId;
+    const meIsLandlord = currentUserId != null && b.landlordId === currentUserId;
+    const meDone = (meIsRenter && !!rc) || (meIsLandlord && !!lc) || clientCompletedRef.current.has(b.bookingId);
+    const peerDone = (meIsRenter && !!lc) || (meIsLandlord && !!rc);
+
+    if (meDone && !peerDone) return 'waiting'; // I'm done, waiting for counterpart
+
+    return normalizeStatus(b.status);
+  };
+
+  // Filter bookings by derived status
+  const upcoming = bookings.filter(b => {
+    const st = getDerivedStatus(b);
+    return st === 'pending' || st === 'confirmed' || st === 'waiting';
+  });
+  const completed = bookings.filter(b => getDerivedStatus(b) === 'completed');
+  const canceled = bookings.filter(b => getDerivedStatus(b) === 'cancelled');
 
   const list = tab === 'upcoming' ? upcoming : tab === 'completed' ? completed : canceled;
 
   const renderStatus = (booking: BookingItem) => {
-    const status = booking.status?.toLowerCase();
+    const status = getDerivedStatus(booking);
     switch (status) {
       case 'pending':
         return <View style={[styles.badge, { backgroundColor: '#FEF3C7' }]}><Text style={[styles.badgeText, { color: '#D97706' }]}>Chờ xác nhận</Text></View>;
       case 'confirmed':
         return <View style={[styles.badge, { backgroundColor: '#DCFCE7' }]}><Text style={[styles.badgeText, { color: '#059669' }]}>Đã xác nhận</Text></View>;
+      case 'waiting':
+        return <View style={[styles.badge, { backgroundColor: '#E0EAFF' }]}><Text style={[styles.badgeText, { color: '#1D4ED8' }]}>Chờ đối phương</Text></View>;
       case 'completed':
         return <View style={[styles.badge, { backgroundColor: '#DCFCE7' }]}><Text style={[styles.badgeText, { color: '#059669' }]}>Hoàn thành</Text></View>;
       case 'cancelled':
@@ -199,6 +274,7 @@ export default function BookingScreen() {
       
       {/* Action buttons grid (2 rows x 3 columns) */}
       <View style={styles.actionGrid}>
+        {/* Gọi & Zalo - Always show */}
         <TouchableOpacity 
           style={styles.gridButton}
           onPress={() => goContact(booking.landlordPhone || booking.renterPhone)}
@@ -215,91 +291,151 @@ export default function BookingScreen() {
           <Text style={[styles.gridButtonText, { color: '#0068FF' }]}>Zalo</Text>
         </TouchableOpacity>
 
-        {/* Track live location (for pending/confirmed bookings) */}
-        {(booking.status?.toLowerCase() === 'pending' || booking.status?.toLowerCase() === 'confirmed') && (
-          <TouchableOpacity 
-            style={styles.gridButton}
-            onPress={() => setTrackingBookingId(booking.bookingId)}
-          >
-            <Ionicons name="navigate-outline" size={18} color="#1971c2" />
-            <Text style={[styles.gridButtonText, { color: '#1971c2' }]}>Theo dõi</Text>
-          </TouchableOpacity>
-        )}
+    {/* === ACTIONS when user has NOT completed yet (hide when waiting/completed/cancelled) === */}
+  {(() => { const st = getDerivedStatus(booking); return st === 'pending' || st === 'confirmed'; })() && (
+          <>
+            {/* Track live location */}
+            <TouchableOpacity 
+              style={styles.gridButton}
+              onPress={() => setTrackingBookingId(booking.bookingId)}
+            >
+              <Ionicons name="navigate-outline" size={18} color="#1971c2" />
+              <Text style={[styles.gridButtonText, { color: '#1971c2' }]}>Theo dõi</Text>
+            </TouchableOpacity>
 
-        {/* Meeting point actions */}
-        {booking.status?.toLowerCase() !== 'completed' && (
-          !booking.meetingLatitude || !booking.meetingLongitude ? (
-            // No meeting set yet → show single "Đặt điểm hẹn"
+            {/* Meeting point actions */}
+            {!booking.meetingLatitude || !booking.meetingLongitude ? (
+              // No meeting set yet → show "Đặt điểm hẹn"
+              <TouchableOpacity 
+                style={styles.gridButton}
+                onPress={() => router.push({ pathname: '/location-map', params: { bookingId: String(booking.bookingId) } })}
+              >
+                <Ionicons name="pin-outline" size={18} color="#c026d3" />
+                <Text style={[styles.gridButtonText, { color: '#c026d3' }]}>Đặt điểm hẹn</Text>
+              </TouchableOpacity>
+            ) : (
+              // Meeting exists → show "Đổi điểm hẹn"
+              <TouchableOpacity 
+                style={styles.gridButton}
+                onPress={() => router.push({ pathname: '/location-map', params: { bookingId: String(booking.bookingId) } })}
+              >
+                <Ionicons name="create-outline" size={18} color="#7c3aed" />
+                <Text style={[styles.gridButtonText, { color: '#7c3aed' }]}>Đổi nơi hẹn</Text>
+              </TouchableOpacity>
+            )}
+            
+            {/* Complete button */}
             <TouchableOpacity 
               style={styles.gridButton}
-              onPress={() => router.push({ pathname: '/location-map', params: { bookingId: String(booking.bookingId) } })}
-            >
-              <Ionicons name="pin-outline" size={18} color="#c026d3" />
-              <Text style={[styles.gridButtonText, { color: '#c026d3' }]}>Đặt điểm hẹn</Text>
-            </TouchableOpacity>
-          ) : (
-            // Meeting exists → single "Đổi điểm hẹn" button
-            <TouchableOpacity 
-              style={styles.gridButton}
-              onPress={() => router.push({ pathname: '/location-map', params: { bookingId: String(booking.bookingId) } })}
-            >
-              <Ionicons name="create-outline" size={18} color="#7c3aed" />
-              <Text style={[styles.gridButtonText, { color: '#7c3aed' }]}>Đổi nơi hẹn</Text>
-            </TouchableOpacity>
-          )
-        )}
-        
-        {/* Landlord quick complete (optional, may overflow grid; keep as part of 6 if space) */}
-        {booking.status?.toLowerCase() !== 'completed' && booking.landlordId && (
-          <TouchableOpacity 
-            style={styles.gridButton}
-            disabled={updatingId === booking.bookingId}
-            onPress={async () => {
-              try {
-                const note = await new Promise<string | undefined>((resolve) => {
-                  Alert.prompt?.('Hoàn thành lịch hẹn', 'Nhập ghi chú (tuỳ chọn)', [
-                    { text: 'Huỷ', style: 'cancel', onPress: () => resolve(undefined) },
-                    { text: 'Xác nhận', onPress: (value?: string) => resolve(value) },
-                  ], 'plain-text');
-                  if (!Alert.prompt) resolve(undefined);
-                });
-                setUpdatingId(booking.bookingId);
-                await updateBookingStatus(booking.bookingId, { status: 'completed', note });
-                await loadBookings();
-              } catch (error: any) {
-                if (isUnauthorizedError(error)) {
-                  await handleUnauthorizedError();
-                } else {
-                  Alert.alert('Lỗi', 'Không thể cập nhật trạng thái');
+              disabled={updatingId === booking.bookingId}
+              onPress={async () => {
+                try {
+                  console.log('[UI] Complete button pressed', { bookingId: booking.bookingId });
+                  
+                  // Show confirmation dialog first (works on all platforms)
+                  const confirmed = await new Promise<boolean>((resolve) => {
+                    Alert.alert(
+                      'Xác nhận hoàn thành',
+                      'Bạn có chắc muốn đánh dấu lịch hẹn này là hoàn thành?',
+                      [
+                        { text: 'Huỷ', style: 'cancel', onPress: () => {
+                          console.log('[UI] User cancelled completion');
+                          resolve(false);
+                        }},
+                        { text: 'Xác nhận', onPress: () => {
+                          console.log('[UI] User confirmed completion');
+                          resolve(true);
+                        }},
+                      ]
+                    );
+                  });
+                  
+                  if (!confirmed) {
+                    console.log('[UI] Aborting update - user cancelled');
+                    return;
+                  }
+                  
+                  console.log('[UI] Setting updatingId and preparing to call API');
+                  setUpdatingId(booking.bookingId);
+                  console.log(`[Booking] Updating booking ${booking.bookingId} to status: Completed`);
+                  const finalNote = `Completed at: ${new Date().toISOString()}`;
+                  console.log('[Booking] Calling updateBookingStatus with', { bookingId: booking.bookingId, status: 'Completed', note: finalNote });
+                  await updateBookingStatus(booking.bookingId, { status: 'Completed', note: finalNote });
+                  console.log(`[Booking] Successfully updated booking ${booking.bookingId}`);
+                  // Optimistically mark this booking as completed by me to show 'waiting' immediately
+                  try { clientCompletedRef.current.add(booking.bookingId); } catch {}
+                  await loadBookings();
+                  Alert.alert('Thành công', 'Lịch hẹn đã được hoàn thành');
+                } catch (error: any) {
+                  console.error('[Booking] Error updating status:', error);
+                  if (isUnauthorizedError(error)) {
+                    await handleUnauthorizedError();
+                  } else {
+                    Alert.alert('Lỗi', `Không thể cập nhật trạng thái: ${error?.message || String(error)}`);
+                  }
+                } finally {
+                  setUpdatingId(null);
                 }
-              } finally {
-                setUpdatingId(null);
-              }
-            }}
-          >
-            <Ionicons name="checkmark-done-outline" size={18} color="#059669" />
-            <Text style={[styles.gridButtonText, { color: '#059669' }]}>
-              {updatingId === booking.bookingId ? 'Đang lưu...' : 'Hoàn thành'}
-            </Text>
-          </TouchableOpacity>
+              }}
+            >
+              <Ionicons name="checkmark-done-outline" size={18} color="#059669" />
+              <Text style={[styles.gridButtonText, { color: '#059669' }]}>
+                {updatingId === booking.bookingId ? 'Đang lưu...' : 'Hoàn thành'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Cancel button */}
+            <TouchableOpacity 
+              style={styles.gridButton}
+              disabled={updatingId === booking.bookingId}
+              onPress={async () => {
+                console.log('[UI] Cancel button pressed', { bookingId: booking.bookingId });
+                Alert.alert(
+                  'Xác nhận hủy',
+                  'Bạn có chắc muốn hủy lịch hẹn này?',
+                  [
+                    { text: 'Không', style: 'cancel' },
+                    { 
+                      text: 'Hủy lịch hẹn', 
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          setUpdatingId(booking.bookingId);
+                          console.log(`[Booking] Cancelling booking ${booking.bookingId}`);
+                          await updateBookingStatus(booking.bookingId, { status: 'Cancelled' });
+                          console.log(`[Booking] Successfully cancelled booking ${booking.bookingId}`);
+                          await loadBookings();
+                          Alert.alert('Đã hủy', 'Lịch hẹn đã được hủy');
+                        } catch (error: any) {
+                          console.error('[Booking] Error cancelling:', error);
+                          if (isUnauthorizedError(error)) {
+                            await handleUnauthorizedError();
+                          } else {
+                            Alert.alert('Lỗi', `Không thể hủy lịch hẹn: ${error?.message || String(error)}`);
+                          }
+                        } finally {
+                          setUpdatingId(null);
+                        }
+                      }
+                    }
+                  ]
+                );
+              }}
+            >
+              <Ionicons name="close-circle-outline" size={18} color="#DC2626" />
+              <Text style={[styles.gridButtonText, { color: '#DC2626' }]}>
+                {updatingId === booking.bookingId ? 'Đang hủy...' : 'Hủy'}
+              </Text>
+            </TouchableOpacity>
+          </>
         )}
 
-        {/* Cancel placeholder (API to be added later) */}
-        {(booking.status?.toLowerCase() === 'pending' || booking.status?.toLowerCase() === 'confirmed') && (
-          <TouchableOpacity 
-            style={styles.gridButton}
-            onPress={() => Alert.alert('Hủy lịch hẹn', 'API hủy sẽ được tích hợp khi bạn cung cấp.')}
-          >
-            <Ionicons name="close-circle-outline" size={18} color="#DC2626" />
-            <Text style={[styles.gridButtonText, { color: '#DC2626' }]}>Hủy</Text>
-          </TouchableOpacity>
-        )}
-
-        {booking.status?.toLowerCase() === 'completed' && (
+        {/* === COMPLETE status actions === */}
+  {getDerivedStatus(booking) === 'completed' && (
           <TouchableOpacity 
             style={styles.gridButton}
             onPress={() => {
-              // TODO: Implement rating functionality
+              // TODO: Navigate to feedback/rating screen
               Alert.alert('Đánh giá', 'Chức năng đánh giá sẽ được triển khai');
             }}
           >
@@ -307,6 +443,8 @@ export default function BookingScreen() {
             <Text style={[styles.gridButtonText, { color: '#F59E0B' }]}>Đánh giá</Text>
           </TouchableOpacity>
         )}
+
+        {/* === CANCELLED status - No additional actions, just contact buttons above === */}
       </View>
     </View>
   );
@@ -354,9 +492,21 @@ export default function BookingScreen() {
           </View>
           <View style={{ flex: 1 }}>
             {(() => {
-              const meetLat = selectedBooking?.meetingLatitude ?? 0;
-              const meetLng = selectedBooking?.meetingLongitude ?? 0;
-              const meetLabel = selectedBooking?.meetingAddress || selectedBooking?.placeMeet || 'Điểm hẹn';
+              // Default to Vinhomes Grand Park (Thu Duc, HCMC)
+              const DEFAULT_MEET = { lat: 10.8426, lng: 106.8297, label: 'Vinhomes Grand Park' };
+
+              const rawLat = selectedBooking?.meetingLatitude;
+              const rawLng = selectedBooking?.meetingLongitude;
+              const hasMeeting =
+                typeof rawLat === 'number' && typeof rawLng === 'number' &&
+                !Number.isNaN(rawLat) && !Number.isNaN(rawLng) &&
+                Math.abs(rawLat) + Math.abs(rawLng) > 0.0002; // avoid (0,0)
+
+              const meetLat = hasMeeting ? (rawLat as number) : DEFAULT_MEET.lat;
+              const meetLng = hasMeeting ? (rawLng as number) : DEFAULT_MEET.lng;
+              const meetLabel = hasMeeting
+                ? (selectedBooking?.meetingAddress || selectedBooking?.placeMeet || 'Điểm hẹn')
+                : DEFAULT_MEET.label;
               return (
             <LiveLocationTracker
               bookingId={trackingBookingId}
