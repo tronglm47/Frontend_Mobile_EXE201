@@ -1,5 +1,7 @@
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { handleUnauthorizedError } from './auth-utils';
+import { showGlobalToast } from './toast';
 
 function resolveBaseUrl(): string | undefined {
   // Prefer EXPO_PUBLIC_* at runtime (works in all builds)
@@ -74,7 +76,18 @@ export async function request<T>(
 
   if (!res.ok) {
     const msg = (data && (data.message || data.error || data.title)) || `HTTP ${res.status}`;
-    throw new Error(msg);
+    const err: any = new Error(msg);
+    err.status = res.status;
+    err.statusCode = res.status;
+    err.data = data;
+    err.errors = (data && (data.errors || data.modelState)) || undefined;
+    if (res.status === 401) {
+      showGlobalToast('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 'error');
+      try {
+        await handleUnauthorizedError();
+      } catch {}
+    }
+    throw err;
   }
 
   return data as T;
