@@ -33,6 +33,8 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="choose-plan" options={{ headerShown: false }} />
+        <Stack.Screen name="subscribe" options={{ headerShown: false }} />
+        <Stack.Screen name="payment-webview" options={{ headerShown: false }} />
         <Stack.Screen name="detail" options={{ headerShown: false }} />
         <Stack.Screen name="booking" options={{ headerShown: false }} />
         {/* Do not declare a `messages` screen here; its children (messages/index, messages/[id]) are routed directly */}

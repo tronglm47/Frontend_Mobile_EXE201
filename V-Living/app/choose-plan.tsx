@@ -24,6 +24,7 @@ const YELLOW_BG = '#E6C15A';
 type Plan = {
   id: string;
   title: string;
+  tagline?: string;
   priceLine1?: string;
   priceLine2?: string;
   bullets: string[];
@@ -36,6 +37,7 @@ const PLANS: Plan[] = [
   {
     id: 'basic',
     title: 'Gói Cơ Bản',
+    tagline: 'Khởi đầu miễn phí cho nhu cầu tìm phòng cơ bản.',
     priceLine1: 'Miễn phí',
     bullets: [
       'Tìm phòng, so sánh giá',
@@ -49,6 +51,7 @@ const PLANS: Plan[] = [
   {
     id: 'pro',
     title: 'Gói Đăng Tin Nâng Cao',
+    tagline: 'Nổi bật bài đăng, tiếp cận khách thuê nhanh hơn.',
     priceLine1: '99.000vnd/tháng',
     priceLine2: '249.000vnd/3 tháng',
     bullets: [
@@ -63,8 +66,9 @@ const PLANS: Plan[] = [
   },
   {
     id: 'usage',
-    title: 'Gói Theo Lượt (Tùy chọn mở rộng)',
-    priceLine1: 'Từ 3.000vnd/lần sử dụng',
+    title: 'Gói Theo Lượt',
+    tagline: 'Chỉ trả khi dùng – linh hoạt cho mọi nhu cầu.',
+    priceLine1: 'Từ 5.000vnd/lần sử dụng',
     bullets: [
       'Gợi ý bạn đọc (AI)',
       'Đẩy ưu tiên liên hệ',
@@ -76,6 +80,7 @@ const PLANS: Plan[] = [
   {
     id: 'partner',
     title: 'Gói Dịch vụ liên kết đối tác',
+    tagline: 'Dọn nhà, vệ sinh, sửa chữa… đặt nhanh giá tốt.',
     priceLine1: 'Từ 70.000vnd/lần',
     bullets: [
       'Vận chuyển – từ ₫500.000 trở lên',
@@ -129,6 +134,7 @@ export default function ChoosePlanScreen() {
             <View style={styles.badge}><Text style={styles.badgeText}>{item.badge}</Text></View>
           ) : null}
         </View>
+        {item.tagline ? <Text style={styles.tagline}>{item.tagline}</Text> : null}
         {item.priceLine1 ? <Text style={styles.price1}>{item.priceLine1}</Text> : null}
         {item.priceLine2 ? <Text style={styles.price2}>{item.priceLine2}</Text> : null}
         <View style={styles.bullets}>
@@ -261,6 +267,7 @@ const styles = StyleSheet.create({
   badgeText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   price1: { fontWeight: '800', fontSize: 18, marginBottom: 2 },
   price2: { fontWeight: '800', fontSize: 16, color: '#4B5563', marginBottom: 8 },
+  tagline: { color: '#6B7280', fontSize: 12, marginTop: 2, marginBottom: 6 },
   bullets: { marginTop: 4, marginBottom: 14 },
   bulletRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
   bulletText: { marginLeft: 8, color: '#374151', flexShrink: 1 },
