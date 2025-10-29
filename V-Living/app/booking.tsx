@@ -18,6 +18,7 @@ import {
 import { getUserInfo } from '../apis/auth';
 import { BookingItem, fetchAllBookings, fetchLandlordPostById, LandlordPostItem, updateBookingStatus } from '../apis/posts';
 import EmptyBooking from '../components/illustrations/EmptyBooking';
+import { LoadingScreen } from '@/components/loading-screen';
 import LiveLocationTracker from '../components/LiveLocationTracker';
  
 import { getPostFromCache, setPostInCache } from '../lib/post-cache';
@@ -333,9 +334,7 @@ export default function BookingScreen() {
 
       {/* Content */}
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Đang tải...</Text>
-        </View>
+        <LoadingScreen />
       ) : list.length === 0 ? (
         <EmptyState />
       ) : (

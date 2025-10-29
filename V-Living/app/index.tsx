@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Asset } from 'expo-asset';
 import { Redirect } from 'expo-router';
 import React from 'react';
+import { getUserInfo } from '@/apis/auth';
+import { showGlobalToast } from '@/utils/toast';
 
 export default function Index() {
   const [ready, setReady] = React.useState(false);
@@ -42,7 +44,20 @@ export default function Index() {
           preloadAssets(),
         ]);
         setHasSeen(seenFlag === 'true');
-        setHasToken(Boolean(token));
+        // If there is a token, validate it by calling a protected endpoint
+        if (token) {
+          try {
+            await getUserInfo();
+            setHasToken(true);
+          } catch {
+            // Invalid or expired token → clear and notify
+            await AsyncStorage.removeItem('authToken');
+            showGlobalToast('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 'error');
+            setHasToken(false);
+          }
+        } else {
+          setHasToken(false);
+        }
         setHasSeenPlans(plansFlag === 'true');
         setHasSelectedLocation(Boolean(locationData));
       } finally {

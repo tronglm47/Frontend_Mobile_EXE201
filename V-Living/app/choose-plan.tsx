@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LoadingScreen } from '@/components/loading-screen';
+import { fetchSubscriptionPlans, SubscriptionPlan } from '@/apis/subscription';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PADDING = 20;
@@ -22,7 +24,7 @@ const GOLD = '#E0B100';
 const YELLOW_BG = '#E6C15A';
 
 type Plan = {
-  id: string;
+  id: string | number;
   title: string;
   tagline?: string;
   priceLine1?: string;
@@ -33,63 +35,26 @@ type Plan = {
   badge?: string;
 };
 
-const PLANS: Plan[] = [
+// Paid fallback options when API fails (no basic plan)
+const FALLBACK_PAID_PLANS: Plan[] = [
   {
-    id: 'basic',
-    title: 'Gói Cơ Bản',
-    tagline: 'Khởi đầu miễn phí cho nhu cầu tìm phòng cơ bản.',
-    priceLine1: 'Miễn phí',
-    bullets: [
-      'Tìm phòng, so sánh giá',
-      'Xem thông tin phòng & chủ nhà',
-      'Gửi tin nhắn miễn phí không giới hạn',
-      'Đăng tin cơ bản',
-    ],
-    action: 'Bắt đầu ngay',
-    variant: 'outline',
-  },
-  {
-    id: 'pro',
+    id: 2,
     title: 'Gói Đăng Tin Nâng Cao',
     tagline: 'Nổi bật bài đăng, tiếp cận khách thuê nhanh hơn.',
-    priceLine1: '99.000vnd/tháng',
-    priceLine2: '249.000vnd/3 tháng',
-    bullets: [
-      'Làm nổi bật bài đăng',
-      'Tự động làm mới bài đăng',
-      'Đăng tin đa nền tảng',
-      'Thống kê lượt xem & quan tâm',
-    ],
-    action: 'Chọn Gói Nâng Cao',
-    variant: 'filled',
+    priceLine1: '99.000đ / tháng',
+    priceLine2: '249.000đ / 3 tháng',
+    bullets: ['Làm nổi bật bài đăng', 'Tự động làm mới', 'Thống kê lượt xem'],
+    action: 'Chọn gói',
+    variant: 'outline',
     badge: 'Phổ biến nhất',
   },
   {
-    id: 'usage',
+    id: 1,
     title: 'Gói Theo Lượt',
     tagline: 'Chỉ trả khi dùng – linh hoạt cho mọi nhu cầu.',
-    priceLine1: 'Từ 5.000vnd/lần sử dụng',
-    bullets: [
-      'Gợi ý bạn đọc (AI)',
-      'Đẩy ưu tiên liên hệ',
-      'Đăng tin cần bán/cho thuê',
-    ],
-    action: 'Dùng Khi Cần',
-    variant: 'outline',
-  },
-  {
-    id: 'partner',
-    title: 'Gói Dịch vụ liên kết đối tác',
-    tagline: 'Dọn nhà, vệ sinh, sửa chữa… đặt nhanh giá tốt.',
-    priceLine1: 'Từ 70.000vnd/lần',
-    bullets: [
-      'Vận chuyển – từ ₫500.000 trở lên',
-      'Vệ sinh – từ ₫70.000/giờ',
-      'Sửa chữa thiết bị',
-      'Bảo hiểm thuê nhà',
-      'Hỗ trợ pháp lý',
-    ],
-    action: 'Đặt Dịch Vụ Ngay',
+    priceLine1: 'Từ 5.000đ / lượt',
+    bullets: ['Đẩy ưu tiên liên hệ', 'Gợi ý bạn đọc', 'Đăng tin cần bán/cho thuê'],
+    action: 'Chọn gói',
     variant: 'outline',
   },
 ];
@@ -97,15 +62,48 @@ const PLANS: Plan[] = [
 export default function ChoosePlanScreen() {
   const scrollX = useRef(new Animated.Value(0)).current;
   const [index, setIndex] = useState(0);
+  const [plans, setPlans] = useState<Plan[] | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await fetchSubscriptionPlans();
+        if (!mounted) return;
+        const paidOnly = (data || []).filter((p) => {
+          const name = (p.name || '').toLowerCase();
+          return !name.includes('basic') && !name.includes('cơ bản');
+        });
+        const mapped: Plan[] = paidOnly.map((p: SubscriptionPlan): Plan => ({
+          id: p.id,
+          title: p.name,
+          tagline: p.description,
+          priceLine1: p.price ? `${p.price}${p.pricePer || ''}` : undefined,
+          bullets: p.highlights || [],
+          action: 'Chọn gói',
+          variant: 'outline', // đồng bộ style như gói cơ bản
+          badge: p.badge,
+        }));
+        setPlans(mapped.length ? mapped : FALLBACK_PAID_PLANS);
+      } catch {
+        setPlans(FALLBACK_PAID_PLANS);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const onContinue = async (selectedPlan?: Plan) => {
     try {
       await AsyncStorage.setItem('hasSeenPlans', 'true');
       if (selectedPlan) {
-        await AsyncStorage.setItem('selectedPlanId', selectedPlan.id);
+        await AsyncStorage.setItem('selectedPlanId', String(selectedPlan.id));
       }
     } catch {}
-    // Sau khi xem combo, chuyển đến location selection
+    // Mọi gói ở đây đều là gói trả phí → mở flow thanh toán
+    if (selectedPlan) {
+      router.replace({ pathname: '/subscribe', params: { planId: String(selectedPlan.id), planName: selectedPlan.title } } as any);
+      return;
+    }
     router.replace('/location-selection');
   };
 
@@ -158,6 +156,10 @@ export default function ChoosePlanScreen() {
     );
   };
 
+  if (!plans) {
+    return <LoadingScreen />;
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle={Platform.OS === 'ios' ? 'dark-content' : 'default'} />
@@ -167,8 +169,8 @@ export default function ChoosePlanScreen() {
       </View>
 
       <Animated.FlatList
-        data={PLANS}
-        keyExtractor={(it) => it.id}
+        data={plans}
+        keyExtractor={(it) => String(it.id)}
         renderItem={renderItem}
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -190,7 +192,7 @@ export default function ChoosePlanScreen() {
       />
 
       <View style={styles.dots}>
-        {PLANS.map((_, i) => (
+        {plans.map((_, i: number) => (
           <View key={i} style={[styles.dot, i === index && styles.dotActive]} />
         ))}
       </View>
