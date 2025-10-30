@@ -41,6 +41,7 @@ export default function BookingScreen() {
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [trackingBookingId, setTrackingBookingId] = useState<number | null>(null);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [currentRole, setCurrentRole] = useState<string | null>(null);
   // Prevent duplicate background sync PUTs for the same booking in a single session
   const syncedRef = useRef<Set<number>>(new Set());
   // Mark bookings that this client has completed (optimistic UI until API list reflects timestamps)
@@ -60,6 +61,7 @@ export default function BookingScreen() {
       try {
         const me = await getUserInfo();
         if (me?.userID != null) setCurrentUserId(me.userID);
+        if (me?.role) setCurrentRole(me.role);
       } catch (e: any) {
         if (isUnauthorizedError(e)) {
           await handleUnauthorizedError();
@@ -466,13 +468,17 @@ export default function BookingScreen() {
           </>
         )}
 
-        {/* === COMPLETE status actions (only renter can review) === */}
+        {/* === COMPLETE status actions (review) === */}
   {(() => {
-          const st = getDerivedStatus(booking);
-          const meIsRenter = currentUserId != null && booking.renterId === currentUserId;
-          if (st !== 'completed' || !meIsRenter) return false;
-          return true;
-        })() && (
+    const st = getDerivedStatus(booking);
+    if (st !== 'completed') return false;
+          // If user info not yet loaded, allow showing the button; backend will validate.
+          if (currentUserId == null) return true;
+          // If role is 'user', allow review per business rule; backend will also enforce renter check.
+          if ((currentRole || '').toLowerCase() === 'user') return true;
+          // Otherwise, show only if this account is the renter.
+          return booking.renterId === currentUserId;
+  })() && (
           reviewedRef.current.has(booking.bookingId) ? (
             <View style={styles.gridButton}>
               <Ionicons name="checkmark-circle-outline" size={18} color="#059669" />
