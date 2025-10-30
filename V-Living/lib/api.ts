@@ -47,11 +47,24 @@ export async function request<T>(
   const rel = path.replace(/^\/+/, '');
   const url = path.startsWith('http') ? path : `${root}/${rel}`;
 
+  // Detect FormData to adjust headers/body handling for multipart upload
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     Accept: 'application/json',
     ...(options.headers || {}),
   };
+
+  // Only set JSON Content-Type when NOT sending FormData
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  } else {
+    // For FormData, let fetch set the proper multipart boundary automatically
+    // If a custom Content-Type was provided externally, keep it; otherwise ensure it's not set
+    if ('Content-Type' in headers && !headers['Content-Type']) {
+      delete headers['Content-Type'];
+    }
+  }
 
   if (options.auth) {
     const token = await AsyncStorage.getItem('authToken');
@@ -61,7 +74,7 @@ export async function request<T>(
   const res = await fetch(url, {
     method: options.method || 'GET',
     headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    body: isFormData ? (options.body as any) : (options.body ? JSON.stringify(options.body) : undefined),
   });
 
   const text = await res.text();
