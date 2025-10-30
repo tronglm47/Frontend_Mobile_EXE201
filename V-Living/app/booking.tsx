@@ -8,17 +8,20 @@ import {
   Alert,
   Image,
   Linking,
+  Modal,
   Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getUserInfo } from '../apis/auth';
 import { BookingItem, fetchAllBookings, fetchLandlordPostById, LandlordPostItem, updateBookingStatus } from '../apis/posts';
+import { createReview } from '../apis/review';
 import EmptyBooking from '../components/illustrations/EmptyBooking';
 import LiveLocationTracker from '../components/LiveLocationTracker';
  
@@ -42,6 +45,13 @@ export default function BookingScreen() {
   const syncedRef = useRef<Set<number>>(new Set());
   // Mark bookings that this client has completed (optimistic UI until API list reflects timestamps)
   const clientCompletedRef = useRef<Set<number>>(new Set());
+  // Review modal state
+  const [reviewVisible, setReviewVisible] = useState(false);
+  const [reviewBookingId, setReviewBookingId] = useState<number | null>(null);
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewDescription, setReviewDescription] = useState<string>('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const reviewedRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     loadBookings();
@@ -177,6 +187,32 @@ export default function BookingScreen() {
         return <View style={[styles.badge, { backgroundColor: '#FEE2E2' }]}><Text style={[styles.badgeText, { color: '#DC2626' }]}>Đã hủy</Text></View>;
       default:
         return <View style={[styles.badge, { backgroundColor: '#F3F4F6' }]}><Text style={[styles.badgeText, { color: MUTED }]}>{booking.status}</Text></View>;
+    }
+  };
+
+  const openReview = (bookingId: number) => {
+    setReviewBookingId(bookingId);
+    setReviewRating(5);
+    setReviewDescription('');
+    setReviewVisible(true);
+  };
+
+  const submitReview = async () => {
+    if (!reviewBookingId) return;
+    if (reviewRating < 1 || reviewRating > 5) {
+      Alert.alert('Lỗi', 'Vui lòng chọn điểm đánh giá từ 1 đến 5');
+      return;
+    }
+    try {
+      setSubmittingReview(true);
+      await createReview({ bookingId: reviewBookingId, rating: reviewRating, description: reviewDescription?.trim() || undefined });
+      try { reviewedRef.current.add(reviewBookingId); } catch {}
+      setReviewVisible(false);
+      Alert.alert('Cảm ơn', 'Đánh giá của bạn đã được ghi nhận');
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể gửi đánh giá');
+    } finally {
+      setSubmittingReview(false);
     }
   };
 
@@ -430,18 +466,27 @@ export default function BookingScreen() {
           </>
         )}
 
-        {/* === COMPLETE status actions === */}
-  {getDerivedStatus(booking) === 'completed' && (
-          <TouchableOpacity 
-            style={styles.gridButton}
-            onPress={() => {
-              // TODO: Navigate to feedback/rating screen
-              Alert.alert('Đánh giá', 'Chức năng đánh giá sẽ được triển khai');
-            }}
-          >
-            <Ionicons name="star-outline" size={18} color="#F59E0B" />
-            <Text style={[styles.gridButtonText, { color: '#F59E0B' }]}>Đánh giá</Text>
-          </TouchableOpacity>
+        {/* === COMPLETE status actions (only renter can review) === */}
+  {(() => {
+          const st = getDerivedStatus(booking);
+          const meIsRenter = currentUserId != null && booking.renterId === currentUserId;
+          if (st !== 'completed' || !meIsRenter) return false;
+          return true;
+        })() && (
+          reviewedRef.current.has(booking.bookingId) ? (
+            <View style={styles.gridButton}>
+              <Ionicons name="checkmark-circle-outline" size={18} color="#059669" />
+              <Text style={[styles.gridButtonText, { color: '#059669' }]}>Đã đánh giá</Text>
+            </View>
+          ) : (
+            <TouchableOpacity 
+              style={styles.gridButton}
+              onPress={() => openReview(booking.bookingId)}
+            >
+              <Ionicons name="star-outline" size={18} color="#F59E0B" />
+              <Text style={[styles.gridButtonText, { color: '#F59E0B' }]}>Đánh giá</Text>
+            </TouchableOpacity>
+          )
         )}
 
         {/* === CANCELLED status - No additional actions, just contact buttons above === */}
@@ -523,6 +568,39 @@ export default function BookingScreen() {
           {/* Removed manual distance tab */}
         </SafeAreaView>
       )}
+      {/* Review Modal */}
+      <Modal visible={reviewVisible} transparent animationType="slide" onRequestClose={() => setReviewVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Đánh giá lịch hẹn</Text>
+            <Text style={styles.modalSubtitle}>Chọn số sao</Text>
+            <View style={{ flexDirection: 'row', marginVertical: 8 }}>
+              {[1,2,3,4,5].map((n) => (
+                <TouchableOpacity key={n} onPress={() => setReviewRating(n)} style={{ padding: 4 }}>
+                  <Ionicons name={n <= reviewRating ? 'star' : 'star-outline'} size={28} color="#F59E0B" />
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.modalSubtitle}>Nhận xét (tuỳ chọn)</Text>
+            <TextInput
+              style={styles.textArea}
+              value={reviewDescription}
+              onChangeText={setReviewDescription}
+              placeholder="Chia sẻ trải nghiệm của bạn (tối đa 500 ký tự)"
+              maxLength={500}
+              multiline
+            />
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
+              <TouchableOpacity disabled={submittingReview} onPress={() => setReviewVisible(false)} style={[styles.modalBtn, { backgroundColor: '#E5E7EB' }]}>
+                <Text style={[styles.modalBtnText, { color: '#374151' }]}>Đóng</Text>
+              </TouchableOpacity>
+              <TouchableOpacity disabled={submittingReview} onPress={submitReview} style={[styles.modalBtn, { backgroundColor: '#F59E0B', marginLeft: 8 }]}>
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>{submittingReview ? 'Đang gửi...' : 'Gửi đánh giá'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -649,4 +727,38 @@ const styles = StyleSheet.create({
   emptyTitle: { marginTop: 8, fontSize: 24, fontWeight: '800', color: TEXT },
   emptySub: { marginTop: 4, color: '#474747ff',fontSize:16,padding: 8 },
   emptySub2: { marginTop: 2, color: MUTED, textAlign: 'center', paddingHorizontal: 0 },
+  // Review modal styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 520,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: TEXT },
+  modalSubtitle: { marginTop: 10, fontWeight: '700', color: TEXT },
+  textArea: {
+    marginTop: 8,
+    minHeight: 90,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 8,
+    padding: 10,
+    textAlignVertical: 'top',
+  },
+  modalBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  modalBtnText: {
+    fontWeight: '700',
+  },
 });
