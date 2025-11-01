@@ -2,16 +2,15 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import Toast from '@/components/Toast';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { onGlobalToast } from '@/utils/toast';
+import React from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { FavoritesProvider } from './favorites-context';
 import { LocationProvider } from './location-context';
 import { RecentViewedProvider } from './recent-viewed-context';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import React from 'react';
-import Toast from '@/components/Toast';
-import { onGlobalToast } from '@/utils/toast';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -29,7 +28,7 @@ export default function RootLayout() {
       setToastType(type);
       setToastVisible(true);
     });
-    return off;
+    return () => { try { off(); } catch {} };
   }, []);
 
   return (
