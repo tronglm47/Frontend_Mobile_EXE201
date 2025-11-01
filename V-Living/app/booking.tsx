@@ -1,3 +1,4 @@
+import FeedbackModal from '@/components/feedback/FeedbackModal';
 import { LoadingScreen } from '@/components/loading-screen';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -8,20 +9,18 @@ import {
   Alert,
   Image,
   Linking,
-  Modal,
   Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getUserInfo } from '../apis/auth';
 import { BookingItem, fetchAllBookings, fetchLandlordPostById, LandlordPostItem, updateBookingStatus } from '../apis/posts';
-import { createReview } from '../apis/review';
+import { createReview, fetchMyReviews, updateReview, type ReviewItem } from '../apis/review';
 import EmptyBooking from '../components/illustrations/EmptyBooking';
 import LiveLocationTracker from '../components/LiveLocationTracker';
  
@@ -53,6 +52,8 @@ export default function BookingScreen() {
   const [reviewDescription, setReviewDescription] = useState<string>('');
   const [submittingReview, setSubmittingReview] = useState(false);
   const reviewedRef = useRef<Set<number>>(new Set());
+  const [myReviewsMap, setMyReviewsMap] = useState<Record<number, ReviewItem>>({});
+  const [editReviewId, setEditReviewId] = useState<number | null>(null);
 
   useEffect(() => {
     loadBookings();
@@ -94,6 +95,15 @@ export default function BookingScreen() {
       const data = await fetchAllBookings();
       // Bookings loaded
       setBookings(data);
+      // Load my reviews to map onto completed bookings (so we can show or switch to edit)
+      try {
+        const first = await fetchMyReviews(1, 50);
+        const map: Record<number, ReviewItem> = {};
+        (first.items || []).forEach((r) => { map[r.bookingId] = r; });
+        setMyReviewsMap(map);
+      } catch (e) {
+        console.warn('Failed to load my reviews:', e);
+      }
       // Opportunistic server sync: if both parties completed but backend status isn't Completed, update it
       try {
         setTimeout(() => {
@@ -194,23 +204,59 @@ export default function BookingScreen() {
 
   const openReview = (bookingId: number) => {
     setReviewBookingId(bookingId);
-    setReviewRating(5);
-    setReviewDescription('');
+    const existing = myReviewsMap[bookingId];
+    if (existing) {
+      setEditReviewId(existing.reviewId);
+      setReviewRating(existing.rating);
+      setReviewDescription(existing.description || '');
+    } else {
+      setEditReviewId(null);
+      setReviewRating(5);
+      setReviewDescription('');
+    }
     setReviewVisible(true);
   };
 
-  const submitReview = async () => {
+  const submitReview = async (overrideRating?: number, overrideDescription?: string) => {
     if (!reviewBookingId) return;
-    if (reviewRating < 1 || reviewRating > 5) {
+    const finalRating = overrideRating ?? reviewRating;
+    const finalDesc = (overrideDescription ?? reviewDescription)?.trim() || '';
+    if (finalRating < 1 || finalRating > 5) {
       Alert.alert('Lỗi', 'Vui lòng chọn điểm đánh giá từ 1 đến 5');
       return;
     }
     try {
       setSubmittingReview(true);
-      await createReview({ bookingId: reviewBookingId, rating: reviewRating, description: reviewDescription?.trim() || undefined });
-      try { reviewedRef.current.add(reviewBookingId); } catch {}
+      if (editReviewId) {
+        await updateReview(editReviewId, { rating: finalRating, description: finalDesc });
+        setMyReviewsMap((prev) => ({
+          ...prev,
+          [reviewBookingId]: {
+            ...(prev[reviewBookingId] || { reviewId: editReviewId, bookingId: reviewBookingId, userId: currentUserId || 0, postId: list.find(b => b.bookingId === reviewBookingId)?.postId || 0 }),
+            rating: finalRating,
+            description: finalDesc,
+            updatedAt: new Date().toISOString(),
+          },
+        }));
+      } else {
+        const res = await createReview({ bookingId: reviewBookingId, rating: finalRating, description: finalDesc || undefined });
+        const newId = res?.reviewId || Math.floor(Math.random() * 1e9);
+        setMyReviewsMap((prev) => ({
+          ...prev,
+          [reviewBookingId]: {
+            reviewId: newId,
+            bookingId: reviewBookingId,
+            userId: currentUserId || 0,
+            postId: list.find(b => b.bookingId === reviewBookingId)?.postId || 0,
+            rating: finalRating,
+            description: finalDesc,
+            createdAt: new Date().toISOString(),
+          },
+        }));
+        try { reviewedRef.current.add(reviewBookingId); } catch {}
+      }
       setReviewVisible(false);
-      Alert.alert('Cảm ơn', 'Đánh giá của bạn đã được ghi nhận');
+      Alert.alert('Thành công', editReviewId ? 'Đã cập nhật đánh giá' : 'Đánh giá của bạn đã được ghi nhận');
     } catch (e: any) {
       Alert.alert('Lỗi', e?.message || 'Không thể gửi đánh giá');
     } finally {
@@ -479,24 +525,59 @@ export default function BookingScreen() {
           // Otherwise, show only if this account is the renter.
           return booking.renterId === currentUserId;
   })() && (
-          reviewedRef.current.has(booking.bookingId) ? (
-            <View style={styles.gridButton}>
-              <Ionicons name="checkmark-circle-outline" size={18} color="#059669" />
-              <Text style={[styles.gridButtonText, { color: '#059669' }]}>Đã đánh giá</Text>
-            </View>
-          ) : (
-            <TouchableOpacity 
-              style={styles.gridButton}
-              onPress={() => openReview(booking.bookingId)}
-            >
-              <Ionicons name="star-outline" size={18} color="#F59E0B" />
-              <Text style={[styles.gridButtonText, { color: '#F59E0B' }]}>Đánh giá</Text>
-            </TouchableOpacity>
-          )
+          <TouchableOpacity 
+            style={styles.gridButton}
+            onPress={() => openReview(booking.bookingId)}
+          >
+            {myReviewsMap[booking.bookingId] ? (
+              <>
+                <Ionicons name="create-outline" size={18} color="#F59E0B" />
+                <Text style={[styles.gridButtonText, { color: '#F59E0B' }]}>Chỉnh sửa đánh giá</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="star-outline" size={18} color="#F59E0B" />
+                <Text style={[styles.gridButtonText, { color: '#F59E0B' }]}>Đánh giá</Text>
+              </>
+            )}
+          </TouchableOpacity>
         )}
 
         {/* === CANCELLED status - No additional actions, just contact buttons above === */}
       </View>
+      {/* Show review content inside completed booking for renter */}
+      {getDerivedStatus(booking) === 'completed' && myReviewsMap[booking.bookingId] && (
+        <View style={styles.reviewSection}>
+          <View style={styles.reviewHeader}>
+            <Ionicons name="chatbox-ellipses" size={16} color={GOLD} style={{ marginRight: 6 }} />
+            <Text style={styles.reviewLabel}>Đánh giá của bạn</Text>
+          </View>
+          <View style={styles.starsRow}>
+            {[1,2,3,4,5].map(n => (
+              <Ionicons key={n} name={n <= (myReviewsMap[booking.bookingId].rating || 0) ? 'star' : 'star-outline'} size={18} color="#F59E0B" style={{ marginRight: 2 }} />
+            ))}
+            <Text style={styles.ratingText}>
+              {(myReviewsMap[booking.bookingId].rating ?? 0).toFixed(1)}
+            </Text>
+          </View>
+          {myReviewsMap[booking.bookingId].description ? (
+            <Text style={styles.reviewText}>{myReviewsMap[booking.bookingId].description}</Text>
+          ) : (
+            <Text style={styles.reviewPlaceholder}>Bạn chưa viết nội dung đánh giá</Text>
+          )}
+          <Text style={styles.reviewDate}>
+            {(() => {
+              const d = myReviewsMap[booking.bookingId].updatedAt || myReviewsMap[booking.bookingId].createdAt;
+              if (!d) return '';
+              try {
+                return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+              } catch {
+                return '';
+              }
+            })()}
+          </Text>
+        </View>
+      )}
     </View>
   );
 
@@ -574,39 +655,21 @@ export default function BookingScreen() {
           {/* Removed manual distance tab */}
         </SafeAreaView>
       )}
-      {/* Review Modal */}
-      <Modal visible={reviewVisible} transparent animationType="slide" onRequestClose={() => setReviewVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Đánh giá lịch hẹn</Text>
-            <Text style={styles.modalSubtitle}>Chọn số sao</Text>
-            <View style={{ flexDirection: 'row', marginVertical: 8 }}>
-              {[1,2,3,4,5].map((n) => (
-                <TouchableOpacity key={n} onPress={() => setReviewRating(n)} style={{ padding: 4 }}>
-                  <Ionicons name={n <= reviewRating ? 'star' : 'star-outline'} size={28} color="#F59E0B" />
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={styles.modalSubtitle}>Nhận xét (tuỳ chọn)</Text>
-            <TextInput
-              style={styles.textArea}
-              value={reviewDescription}
-              onChangeText={setReviewDescription}
-              placeholder="Chia sẻ trải nghiệm của bạn (tối đa 500 ký tự)"
-              maxLength={500}
-              multiline
-            />
-            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
-              <TouchableOpacity disabled={submittingReview} onPress={() => setReviewVisible(false)} style={[styles.modalBtn, { backgroundColor: '#E5E7EB' }]}>
-                <Text style={[styles.modalBtnText, { color: '#374151' }]}>Đóng</Text>
-              </TouchableOpacity>
-              <TouchableOpacity disabled={submittingReview} onPress={submitReview} style={[styles.modalBtn, { backgroundColor: '#F59E0B', marginLeft: 8 }]}>
-                <Text style={[styles.modalBtnText, { color: '#fff' }]}>{submittingReview ? 'Đang gửi...' : 'Gửi đánh giá'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <FeedbackModal
+        visible={reviewVisible}
+        title="Feedback"
+        heading={editReviewId ? 'Chỉnh sửa đánh giá' : 'How are you feeling?'}
+        description="Your input is valuable in helping us better understand your needs and tailor our service accordingly"
+        initialRating={reviewRating}
+        initialComment={reviewDescription}
+        submitting={submittingReview}
+        onClose={() => setReviewVisible(false)}
+        onSubmit={async (r, c) => {
+          setReviewRating(r);
+          setReviewDescription(c);
+          await submitReview(r, c);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -733,36 +796,175 @@ const styles = StyleSheet.create({
   emptyTitle: { marginTop: 8, fontSize: 24, fontWeight: '800', color: TEXT },
   emptySub: { marginTop: 4, color: '#474747ff',fontSize:16,padding: 8 },
   emptySub2: { marginTop: 2, color: MUTED, textAlign: 'center', paddingHorizontal: 0 },
+  
+  // Review section in booking card
+  reviewSection: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#FFFBF0',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: BORDER,
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  reviewLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: TEXT,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  ratingText: {
+    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#F59E0B',
+  },
+  reviewText: {
+    color: '#1F2937',
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 6,
+  },
+  reviewPlaceholder: {
+    color: '#9CA3AF',
+    fontSize: 13,
+    fontStyle: 'italic',
+    marginBottom: 6,
+  },
+  reviewDate: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 4,
+  },
+  
   // Review modal styles
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
+    padding: 20,
   },
   modalCard: {
     width: '100%',
-    maxWidth: 520,
+    maxWidth: 480,
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: TEXT },
-  modalSubtitle: { marginTop: 10, fontWeight: '700', color: TEXT },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  modalTitle: { 
+    fontSize: 20, 
+    fontWeight: '800', 
+    color: TEXT,
+    flex: 1,
+  },
+  modalSubtitle: { 
+    marginTop: 16, 
+    marginBottom: 10,
+    fontWeight: '700', 
+    color: TEXT,
+    fontSize: 14,
+  },
+  starsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 12,
+    gap: 8,
+  },
+  starButton: {
+    padding: 4,
+  },
+  ratingTextContainer: {
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  ratingLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#F59E0B',
+  },
   textArea: {
     marginTop: 8,
-    minHeight: 90,
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 8,
-    padding: 10,
+    minHeight: 100,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 12,
     textAlignVertical: 'top',
+    fontSize: 14,
+    color: TEXT,
+    backgroundColor: '#FAFAFA',
+  },
+  charCount: {
+    textAlign: 'right',
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 6,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
   },
   modalBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 8,
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelBtn: {
+    backgroundColor: '#F3F4F6',
+  },
+  modalCancelText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  modalSubmitBtn: {
+    backgroundColor: '#F59E0B',
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  modalSubmitText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  modalBtnDisabled: {
+    opacity: 0.6,
   },
   modalBtnText: {
     fontWeight: '700',
